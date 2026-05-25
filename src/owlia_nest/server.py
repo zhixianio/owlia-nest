@@ -77,8 +77,22 @@ MANIFEST_JSON = json.dumps({
     "display": "standalone",
     "background_color": "#0d1117",
     "theme_color": "#0969da",
-    "icons": [],
+    "icons": [
+        {"src": "/docs/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+        {"src": "/docs/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    ],
 }, indent=2)
+
+def _load_icon(name):
+    p = Path(__file__).resolve().parent / "icons" / name
+    return p.read_bytes() if p.exists() else None
+
+ICONS = {}  # path -> (mime, bytes)
+ICON_NAMES = ["favicon-32.png", "icon-192.png", "icon-512.png", "logo.png"]
+for name in ICON_NAMES:
+    data = _load_icon(name)
+    if data:
+        ICONS[name] = ("image/png", data)
 
 SW_JS = """
 const C = 'owlia-nest-v1';
@@ -101,6 +115,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 header { padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 header h1 { font-size: 1.5rem; color: var(--accent); }
 header p { color: var(--muted); font-size: 0.85rem; }
+.header-brand { display: flex; align-items: center; gap: 0.5rem; }
+.logo { border-radius: 6px; flex-shrink: 0; }
 .header-right { display: flex; gap: 0.5rem; align-items: center; }
 .theme-select { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; }
 .breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
@@ -166,6 +182,9 @@ PAGE_TPL = """\
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{title}</title>
+<link rel="icon" type="image/png" sizes="32x32" href="{api_base}/icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="192x192" href="{api_base}/icons/icon-192.png">
+<link rel="shortcut icon" href="{api_base}/favicon.ico">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Owlia Nest">
@@ -412,7 +431,7 @@ def render_home(files, dirs, prefix=""):
 
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     header = f"""<header>
-  <div><h1>🦉 Owlia Nest</h1><p>PA 产出文档中心</p></div>
+  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div>
   <div class="header-right">
     <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select>
@@ -436,7 +455,7 @@ def render_md(path, prefix=""):
     raw = path.read_text(encoding="utf-8", errors="replace")
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
-    body = f"""<header><div><h1>🦉 Owlia Nest</h1></div>
+    body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
 <div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
 <div class="markdown-body">{html}</div>
@@ -446,7 +465,7 @@ def render_md(path, prefix=""):
 def render_txt(path, prefix=""):
     raw = path.read_text(encoding="utf-8", errors="replace")
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
-    body = f"""<header><div><h1>🦉 Owlia Nest</h1></div>
+    body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
 <div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
 <pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
@@ -477,6 +496,13 @@ def create_app(targets=None, prefix=""):
 
             if path == "/sw.js":
                 self._send(SW_JS, "application/javascript; charset=utf-8")
+            elif path.startswith("/icons/") and path[7:] in ICONS:
+                mime, data = ICONS[path[7:]]
+                self._send(data, mime)
+            elif path == "/favicon.ico":
+                if "favicon-32.png" in ICONS:
+                    mime, data = ICONS["favicon-32.png"]
+                    self._send(data, mime)
             elif path == "/manifest.json":
                 self._send(MANIFEST_JSON, "application/json; charset=utf-8")
             elif path == "/api/dirs":

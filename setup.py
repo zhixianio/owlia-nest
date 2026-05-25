@@ -5,6 +5,8 @@ setup(
     version="0.1.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
+    package_data={"owlia_nest": ["icons/*"]},
+    include_package_data=True,
     install_requires=["markdown>=3.4", "pygments>=2.15"],
     entry_points={
         "console_scripts": ["owlia-nest=owlia_nest.cli:main"],
