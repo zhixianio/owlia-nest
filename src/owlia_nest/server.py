@@ -1,0 +1,575 @@
+"""OWlia Docs server — Markdown renderer with themes, PWA, categorization."""
+
+import json
+import os
+import time
+from pathlib import Path
+
+import markdown
+from markdown.extensions import codehilite, fenced_code, tables, toc
+
+MD_EXTENSIONS = [
+    fenced_code.FencedCodeExtension(),
+    codehilite.CodeHiliteExtension(guess_lang=False, css_class="highlight"),
+    tables.TableExtension(),
+    toc.TocExtension(permalink=True),
+]
+
+# ── Themes ────────────────────────────────────────────────────────
+THEMES = {
+    "github": {
+        "name": "☀️ GitHub Light",
+        "css": """\
+  --bg: #ffffff; --fg: #1f2328; --accent: #0969da;
+  --muted: #656d76; --border: #d0d7de; --card-bg: #f6f8fa; --code-bg: #f6f8fa;
+  --tint: #ddf4ff;""",
+    },
+    "github-dark": {
+        "name": "🌙 GitHub Dark",
+        "css": """\
+  --bg: #0d1117; --fg: #e6edf3; --accent: #58a6ff;
+  --muted: #8b949e; --border: #30363d; --card-bg: #161b22; --code-bg: #161b22;
+  --tint: #0c2d6b;""",
+    },
+    "nord": {
+        "name": "❄️ Nord",
+        "css": """\
+  --bg: #2e3440; --fg: #d8dee9; --accent: #88c0d0;
+  --muted: #81a1c1; --border: #4c566a; --card-bg: #3b4252; --code-bg: #3b4252;
+  --tint: #434c5e;""",
+    },
+    "dracula": {
+        "name": "🧛 Dracula",
+        "css": """\
+  --bg: #282a36; --fg: #f8f8f2; --accent: #bd93f9;
+  --muted: #6272a4; --border: #44475a; --card-bg: #343746; --code-bg: #343746;
+  --tint: #44475a;""",
+    },
+    "solarized": {
+        "name": "📜 Solarized",
+        "css": """\
+  --bg: #fdf6e3; --fg: #657b83; --accent: #268bd2;
+  --muted: #839496; --border: #93a1a1; --card-bg: #eee8d5; --code-bg: #eee8d5;
+  --tint: #eee8d5;""",
+    },
+}
+
+def theme_dict(name):
+    """Convert a theme's CSS string to a {var: value} dict for JS."""
+    t = THEMES[name]
+    out = {}
+    for line in t["css"].strip().split(";"):
+        line = line.strip()
+        if line and ":" in line:
+            k, v = line.split(":", 1)
+            k = k.strip().lstrip("-")
+            v = v.strip()
+            if v:
+                out[k] = v
+    return out
+
+
+MANIFEST_JSON = json.dumps({
+    "name": "Owlia Nest",
+    "short_name": "Owlia Nest",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#0d1117",
+    "theme_color": "#0969da",
+    "icons": [],
+}, indent=2)
+
+SW_JS = """
+const C = 'owlia-nest-v1';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(C).then(c => c.addAll(['/'])));
+});
+self.addEventListener('fetch', e => {
+  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
+    if (resp.ok) { const clone = resp.clone();
+      caches.open(C).then(c => c.put(e.request, clone)); }
+    return resp;
+  })));
+});
+"""
+
+BASE_CSS = """\
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; transition: background 0.3s, color 0.3s; }
+.container { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem; }
+header { padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+header h1 { font-size: 1.5rem; color: var(--accent); }
+header p { color: var(--muted); font-size: 0.85rem; }
+.header-right { display: flex; gap: 0.5rem; align-items: center; }
+.theme-select { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; }
+.breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
+.breadcrumb a { color: var(--accent); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+.file-card { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--border); border-radius: 6px; transition: background 0.15s; }
+.file-card:hover { background: var(--card-bg); }
+.file-icon { font-size: 1.1rem; flex-shrink: 0; width: 1.5rem; text-align: center; }
+.file-name { flex: 1; min-width: 0; }
+.file-name a { color: var(--accent); text-decoration: none; font-weight: 500; word-break: break-all; }
+.file-name a:hover { text-decoration: underline; }
+.file-path { color: var(--muted); font-size: 0.78rem; word-break: break-all; }
+.file-date { color: var(--muted); font-size: 0.8rem; white-space: nowrap; min-width: 5rem; text-align: right; }
+.file-size { color: var(--muted); font-size: 0.75rem; min-width: 3.5rem; text-align: right; }
+.markdown-body { max-width: 100%; overflow-x: auto; word-wrap: break-word; }
+.markdown-body h1 { font-size: 1.75rem; margin: 1.5rem 0 0.5rem; color: var(--fg); }
+.markdown-body h2 { font-size: 1.35rem; margin: 1.25rem 0 0.4rem; padding-bottom: 0.3rem; border-bottom: 2px solid var(--border); color: var(--fg); }
+.markdown-body h3 { font-size: 1.15rem; margin: 1rem 0 0.3rem; color: var(--fg); }
+.markdown-body p, .markdown-body li { margin: 0.5rem 0; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.5rem; }
+.markdown-body a { color: var(--accent); }
+.markdown-body code { background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+.markdown-body pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0.75rem 0; border: 1px solid var(--border); }
+.markdown-body pre code { background: none; padding: 0; border: none; }
+.markdown-body table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; display: block; overflow-x: auto; }
+.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+.markdown-body th { background: var(--card-bg); font-weight: 600; }
+.markdown-body blockquote { border-left: 3px solid var(--accent); padding: 0.5rem 1rem; color: var(--muted); margin: 0.75rem 0; background: var(--tint, var(--card-bg)); border-radius: 0 6px 6px 0; }
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+.markdown-body img { max-width: 100%; height: auto; border-radius: 6px; }
+.back-link { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.back-link a { color: var(--accent); text-decoration: none; }
+.status-bar { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 1rem 0; margin-top: 2rem; border-top: 1px solid var(--border); }
+.tabs-bar { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border); padding-bottom: 0; }
+.tabs-bar button { background: none; border: none; color: var(--muted); padding: 0.5rem 0.75rem; font-size: 0.875rem; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; font-family: inherit; }
+.tabs-bar button:hover { color: var(--fg); }
+.tabs-bar button.tab-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.tab-count { font-size: 0.75rem; opacity: 0.6; }
+.settings-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; transition: all 0.2s; }
+.settings-title { font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem; }
+.dir-list { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; max-height: 200px; overflow-y: auto; }
+.dir-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.85rem; background: var(--bg); }
+.dir-path { flex: 1; word-break: break-all; font-family: monospace; font-size: 0.78rem; }
+.dir-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 0.25rem; line-height: 1; }
+.dir-remove:hover { color: #ef4444; }
+.add-dir-row { display: flex; gap: 0.5rem; }
+.dir-input { flex: 1; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 0.8rem; }
+.dir-input:focus { outline: 2px solid var(--accent); }
+.btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+.btn-add:hover { opacity: 0.85; }
+@media (max-width: 600px) {
+  .file-card { flex-wrap: wrap; gap: 0.3rem; }
+  .file-date, .file-size { min-width: auto; }
+  .container { padding: 0.5rem 0.75rem; }
+  header { flex-direction: column; }
+}
+"""
+
+PAGE_TPL = """\
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{title}</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Owlia Nest">
+<meta name="theme-color" content="#0d1117">
+{head_extra}
+<style>
+:root {{ {__theme_css__} }}
+{BASE_CSS}
+</style>
+</head>
+<body>
+<div class="container">
+{body}
+</div>
+<script>
+{__theme_js__}
+(function(){{
+  var sel=document.getElementById('themeSelect');
+  if(sel){{
+    var saved=localStorage.getItem('owlia-theme')||'{default_theme}';
+    sel.value=saved;
+    _apply(saved);
+    sel.onchange=function(){{ _apply(this.value); localStorage.setItem('owlia-theme',this.value); }};
+  }}
+  function _apply(k){{
+    var t=THEMES[k]; if(!t)return;
+    var r=document.documentElement;
+    Object.keys(t).forEach(function(v){{ r.style.setProperty('--'+v,t[v]); }});
+    if(sel)sel.value=k;
+  }}
+  var btns=document.querySelectorAll('.tabs-bar button');
+  btns.forEach(function(b){{
+    b.onclick=function(){{
+      btns.forEach(function(x){{x.classList.remove('tab-active')}});
+      b.classList.add('tab-active');
+      var key=b.dataset.tab;
+      document.querySelectorAll('.tab-panel').forEach(function(p){{p.style.display='none'}});
+      var el=document.querySelector('[data-panel="'+key+'"]');
+      if(el)el.style.display='';
+    }}
+  }});
+  /* Settings */
+  loadDirs();
+}})();
+</script>
+<script>
+function toggleSettings(){{
+  var p=document.getElementById('settingsPanel');
+  p.style.display=p.style.display==='none'?'block':'none';
+  if(p.style.display==='block')loadDirs();
+}}
+function api(method,url,body){{ return fetch(url,{{method:method,headers:{{'Content-Type':'application/json'}},body:body?JSON.stringify(body):null}}).then(function(r){{return r.json()}}); }}
+function loadDirs(){{
+  api('GET','{api_base}/api/dirs').then(function(dirs){{
+    var el=document.getElementById('dirList');
+    if(!el)return;
+    el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="移除">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">暂无监控目录</span>';
+    // Attach click handlers to remove buttons
+    document.querySelectorAll('.dir-remove').forEach(function(btn){{
+      btn.onclick=function(){{ removeDir(decodeURIComponent(this.dataset.dir)); }};
+    }});
+  }});
+}}
+function addDir(){{
+  var inp=document.getElementById('dirInput');
+  if(!inp||!inp.value.trim())return;
+  api('POST','{api_base}/api/add-dir',{{dir:inp.value.trim()}}).then(function(r){{
+    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
+function removeDir(d){{
+  d=decodeURIComponent(d);
+  if(!confirm('移除 '+d+' ？'))return;
+  api('POST','{api_base}/api/remove-dir',{{dir:d}}).then(function(r){{
+    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
+</script>
+</body>
+</html>
+"""
+
+CATEGORIES = {
+    "recent": ("🕐", "最近更新"), "doc": ("📄", "文档"),
+    "code": ("💻", "代码"), "config": ("⚙️", "配置"), "dirs": ("📂", "目录"),
+}
+_FILE_ICON = {
+    "md": "📄", "txt": "📝",
+    "py": "🐍", "ts": "🔷", "js": "📜", "html": "🌐", "css": "🎨",
+    "json": "⚙️", "yaml": "⚙️", "yml": "⚙️", "toml": "⚙️",
+}
+
+# ── File scanning ─────────────────────────────────────────────────
+# Default dirs are relative to workspace, detected at init time.
+# Fallback list used only if no config exists.
+DEFAULT_DIRS = [
+    "~/clawd/docs",  # legacy
+    "~/clawd/memory",
+    "~/clawd",
+    "~/.openclaw/workspace/docs",
+    "~/.openclaw/workspace/memory",
+    "~/.openclaw/workspace",
+]
+
+def _expand(p):
+    return Path(p).expanduser().resolve()
+
+def load_config(config_path=None):
+    if config_path is None:
+        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    path = _expand(config_path)
+    if path.exists():
+        data = json.loads(path.read_text())
+        return [_expand(p) for p in data.get("dirs", [])]
+    # fallback: scan default dirs if they exist
+    return [_expand(d) for d in DEFAULT_DIRS if _expand(d).exists()]
+
+def save_config(dirs, config_path=None):
+    if config_path is None:
+        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    path = _expand(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"dirs": [str(d) for d in dirs]}
+    path.write_text(json.dumps(data, indent=2))
+    return path
+
+def scan_file(path, root):
+    stat = path.stat()
+    return {
+        "name": path.name, "path": str(path),
+        "mtime": stat.st_mtime,
+        "mtime_str": time.strftime("%m-%d %H:%M", time.localtime(stat.st_mtime)),
+        "size": stat.st_size, "is_dir": path.is_dir(),
+        "rel_path": str(path.relative_to(root)), "root": str(root),
+    }
+
+def scan_files(targets):
+    files, dirs_list = [], []
+    skip_parts = {"__pycache__", "node_modules", ".git"}
+    valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml"}
+    for target in targets:
+        if not target.exists():
+            continue
+        if target.is_file():
+            info = scan_file(target, target.parent)
+            info["rel_path"] = target.name
+            files.append(info)
+        elif target.is_dir():
+            dirs_list.append(target)
+            for fpath in sorted(target.rglob("*")):
+                if fpath.is_file() and not fpath.name.startswith("."):
+                    if skip_parts & set(fpath.parts):
+                        continue
+                    if fpath.suffix.lower() in valid_ext:
+                        files.append(scan_file(fpath, target))
+    files.sort(key=lambda f: f["mtime"], reverse=True)
+    return files, dirs_list
+
+# ── Utilities ─────────────────────────────────────────────────────
+def size_fmt(n):
+    if n < 1024: return f"{n}B"
+    if n < 1024 * 1024: return f"{n / 1024:.0f}KB"
+    return f"{n / (1024*1024):.0f}MB"
+
+def time_ago(mtime):
+    diff = time.time() - mtime
+    if diff < 60: return "刚才"
+    if diff < 3600: return f"{int(diff / 60)}分钟前"
+    if diff < 86400: return f"{int(diff / 3600)}小时前"
+    if diff < 604800: return f"{int(diff / 86400)}天前"
+    return time.strftime("%m-%d %H:%M", time.localtime(mtime))
+
+def classify(f):
+    name = f["name"]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext in ("md", "txt"): return "doc"
+    if ext in ("py", "ts", "js", "tsx", "jsx", "html", "css", "scss"): return "code"
+    if ext in ("json", "yaml", "yml", "toml", "cfg", "ini", "env", "lock"): return "config"
+    return "other"
+
+def icon_for(f):
+    name = f["name"]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return _FILE_ICON.get(ext, "📁" if f["is_dir"] else "📎")
+
+# ── HTML builders ─────────────────────────────────────────────────
+def mk_page(title, body, head_extra="", default_theme="github-dark", prefix=""):
+    theme_css = THEMES[default_theme]["css"].strip()
+    theme_json = json.dumps({k: theme_dict(k) for k in THEMES})
+    theme_js = f"var THEMES = {theme_json};"
+    return PAGE_TPL.format(
+        title=title, body=body, head_extra=head_extra,
+        __theme_css__=theme_css, __theme_js__=theme_js,
+        BASE_CSS=BASE_CSS, default_theme=default_theme,
+        api_base=prefix,
+    )
+
+def file_card(f, href):
+    return (
+        f'<div class="file-card" data-cat="{classify(f)}">'
+        f'<span class="file-icon">{icon_for(f)}</span>'
+        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{f["name"]}</a>'
+        f'<br><span class="file-path">{f["path"]}</span></span>'
+        f'<span class="file-date">{time_ago(f["mtime"])}</span>'
+        f'<span class="file-size">{size_fmt(f["size"])}</span></div>'
+    )
+
+def dir_card(d):
+    return (
+        f'<div class="file-card" data-cat="dirs">'
+        f'<span class="file-icon">📁</span>'
+        f'<span class="file-name" style="color:var(--muted)"><strong>{d.name}</strong>'
+        f'<br><span class="file-path">{d}</span></span>'
+        f'<span class="file-date"></span><span class="file-size"></span></div>'
+    )
+
+def render_home(files, dirs, prefix=""):
+    view_url = prefix + "/view"
+    cats = {k: [] for k in CATEGORIES}
+    cats["recent"] = [file_card(f, view_url) for f in files[:30]]
+    for f in files:
+        c = classify(f)
+        if c in cats:
+            cats[c].append(file_card(f, view_url))
+    cats["dirs"] = [dir_card(d) for d in dirs]
+
+    tabs = '<nav class="tabs-bar" aria-label="Categories">'
+    for key, (emoji, label) in CATEGORIES.items():
+        active = ' class="tab-active"' if key == "recent" else ""
+        cnt = len(cats[key])
+        cnt_str = f' <span class="tab-count">{cnt}</span>' if cnt else ""
+        tabs += f'<button{active} data-tab="{key}">{emoji} {label}{cnt_str}</button>'
+    tabs += '</nav>'
+
+    secs = []
+    for key, cards in cats.items():
+        hidden = '' if key == "recent" else ' style="display:none"'
+        if cards:
+            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}>{"".join(cards)}</section>')
+        else:
+            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">暂无内容</p></section>')
+
+    theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    header = f"""<header>
+  <div><h1>🦉 Owlia Nest</h1><p>PA 产出文档中心</p></div>
+  <div class="header-right">
+    <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
+    <select class="theme-select" id="themeSelect">{theme_opts}</select>
+    <button class="theme-select" onclick="location.reload()" title="刷新">↻</button>
+  </div>
+</header>
+<div id="settingsPanel" class="settings-panel" style="display:none">
+  <div class="settings-title">📂 监控目录</div>
+  <div id="dirList" class="dir-list">加载中…</div>
+  <div class="add-dir-row">
+    <input id="dirInput" type="text" class="dir-input" placeholder="输入目录路径，如 ~/my-project">
+    <button class="btn-add" onclick="addDir()">+ 添加</button>
+  </div>
+</div>"""
+
+    head_extra = f'<link rel="manifest" href="{prefix}/manifest.json">'
+    body = header + tabs + "\n".join(secs)
+    return mk_page("Owlia Nest", body, head_extra, prefix=prefix)
+
+def render_md(path, prefix=""):
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
+    theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    body = f"""<header><div><h1>🦉 Owlia Nest</h1></div>
+  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+<div class="markdown-body">{html}</div>
+<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+
+def render_txt(path, prefix=""):
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    body = f"""<header><div><h1>🦉 Owlia Nest</h1></div>
+  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+<pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
+<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+
+# ── WSGI/HTTP handler ────────────────────────────────────────────
+def create_app(targets=None, prefix=""):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    if targets is None:
+        targets = load_config()
+    # Wrap in list to allow mutation from nested Handler
+    _t = [targets]
+    config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    prefix = prefix.rstrip("/")
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            raw_path = parsed.path
+            path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
+            if not path.startswith("/"):
+                path = "/" + path
+            q = parse_qs(parsed.query)
+            targets = _t[0]
+
+            if path == "/sw.js":
+                self._send(SW_JS, "application/javascript; charset=utf-8")
+            elif path == "/manifest.json":
+                self._send(MANIFEST_JSON, "application/json; charset=utf-8")
+            elif path == "/api/dirs":
+                self._send(json.dumps([str(d) for d in targets]), "application/json; charset=utf-8")
+            elif path == "/":
+                files, dirs_list = scan_files(targets)
+                self._html(render_home(files, dirs_list, prefix))
+            elif path == "/view":
+                f_rel = q.get("f", [None])[0]
+                f_root = q.get("r", [None])[0]
+                if not f_rel or not f_root:
+                    self.send_error(404); return
+                fpath = Path(f_root) / f_rel
+                if fpath.exists() and fpath.is_file():
+                    if fpath.suffix == ".md":
+                        self._html(render_md(fpath, prefix))
+                    else:
+                        self._html(render_txt(fpath, prefix))
+                else:
+                    self.send_error(404, "File not found")
+            else:
+                self.send_error(404)
+
+        def do_POST(self):
+            parsed = urlparse(self.path)
+            raw_path = parsed.path
+            path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
+            if not path.startswith("/"):
+                path = "/" + path
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8", errors="replace")
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                data = {}
+            targets = _t[0]
+
+            if path == "/api/add-dir":
+                d = data.get("dir", "").strip()
+                if not d:
+                    self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
+                dp = Path(d).expanduser().resolve()
+                if not dp.exists():
+                    self._send(json.dumps({"ok": False, "error": f"not found: {dp}"}), "application/json"); return
+                if dp in targets:
+                    self._send(json.dumps({"ok": False, "error": "already exists"}), "application/json"); return
+                _t[0].append(dp)
+                save_config(_t[0], config_path)
+                self._send(json.dumps({"ok": True, "path": str(dp)}), "application/json")
+            elif path == "/api/remove-dir":
+                d = data.get("dir", "").strip()
+                if not d:
+                    self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
+                dp = Path(d).expanduser().resolve()
+                # Remove by matching resolved path
+                _t[0] = [t for t in _t[0] if t != dp]
+                save_config(_t[0], config_path)
+                self._send(json.dumps({"ok": True}), "application/json")
+            elif path == "/api/reload":
+                _t[0] = load_config(config_path)
+                self._send(json.dumps({"ok": True, "count": len(_t[0])}), "application/json")
+            else:
+                self.send_error(404)
+
+        def _send(self, content, ct):
+            body = content.encode("utf-8") if isinstance(content, str) else content
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _html(self, content):
+            self._send(content, "text/html; charset=utf-8")
+
+        def log_message(self, fmt, *args):
+            pass
+
+    return Handler
+
+
+def serve(host="127.0.0.1", port=8788, prefix="", targets=None):
+    """Start the HTTP server."""
+    from http.server import ThreadingHTTPServer
+    if targets is None:
+        targets = load_config()
+    prefix = prefix.rstrip("/")
+
+    Handler = create_app(targets, prefix)
+    httpd = ThreadingHTTPServer((host, port), Handler)
+    print(f"🦉 Owlia Nest → http://{host}:{port}{prefix}/")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n👋 Done")
+        httpd.shutdown()
