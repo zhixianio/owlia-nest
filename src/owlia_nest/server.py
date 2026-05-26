@@ -521,16 +521,15 @@ function toast(msg){{
 }}
 // Delegated click handler for exclude buttons
 document.addEventListener('click',function(e){{
+  console.log('click target:', e.target.tagName, e.target.className);
   var btn = e.target.closest('.btn-tiny');
+  console.log('closest btn-tiny:', btn);
   if(!btn) return;
   var d = btn.getAttribute('data-exclude-dir');
   if(d){{ quickExcludeDir(d,btn); return; }}
   var ext = btn.getAttribute('data-exclude-ext');
   if(ext){{ quickExcludeExt(ext,btn); return; }}
 }});
-    else alert(r.error||'Failed');
-  }});
-}}
 function removeExcludeExt(e){{
   e=decodeURIComponent(e);
   api('POST','{api_base}/api/remove-exclude-ext',{{ext:e}}).then(function(r){{
@@ -736,6 +735,7 @@ def render_home(files, prefix=""):
   <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><div><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div></div>
   <div class="header-right">
     {version_html}
+    <button class="btn-tiny" data-exclude-dir="/tmp/test-dir" title="测试按钮">🧪测试</button>
     <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select>
     <button class="theme-select" onclick="location.reload()" title="刷新">↻</button>
