@@ -14,16 +14,28 @@
 - 用户说"手机上怎么看你的报告"
 - 用户需要一个文档中心来浏览 PA 产出的所有内容
 
+## 前置条件
+
+- Python ≥ 3.9
+- pip（Python 通常自带；如果没有：`python3 -m ensurepip --user` 或下载 [get-pip.py](https://bootstrap.pypa.io/get-pip.py)）
+- git（从 GitHub 安装需要）
+
 ## Installation
 
 ```bash
-pip install owlia-nest
+pip install git+https://github.com/zhixianio/owlia-nest.git
 ```
 
-如果 pip 不可用或用户 Python 版本较老，使用：
+如果 git 不可用，下载 zip 安装：
 ```bash
-# 从 GitHub 安装
-git clone https://github.com/zhixianio/owlia-nest ~/Codes/owlia-nest
+curl -L https://github.com/zhixianio/owlia-nest/archive/refs/heads/main.zip -o /tmp/owlia-nest.zip
+unzip /tmp/owlia-nest.zip -d /tmp
+pip install /tmp/owlia-nest-main
+```
+
+或者直接 clone：
+```bash
+git clone https://github.com/zhixianio/owlia-nest.git ~/Codes/owlia-nest
 cd ~/Codes/owlia-nest && pip install -e .
 ```
 
@@ -98,9 +110,11 @@ http://<hostname>/docs/
 ## Troubleshooting
 
 ### pip install 失败
+- **`No matching distribution found`** → 未发布到 PyPI，请用 `pip install git+https://github.com/zhixianio/owlia-nest.git`
+- **`git: command not found`** → 没装 git；用 curl + unzip 方式安装（见 Installation）
+- **`No module named pip`** → Python 安装不完整；用 `python3 -m ensurepip --user` 或下载 get-pip.py
 - 检查 Python 版本 ≥ 3.9
 - 旧 pip 需要升级：`pip install --upgrade pip`
-- 需要 markdown 和 pygments：`pip install markdown pygments`
 
 ### 端口被占用
 - `owlia-nest serve --port 9999`
@@ -121,8 +135,9 @@ http://<hostname>/docs/
 
 ## 给 PA 的提示
 
-1. **首次安装**优先用 `owlia-nest setup`，自动检测环境
-2. **添加项目目录**：`owlia-nest add <dir>` 后刷新页面即可看到
-3. **产出文件**按上述目录规范存放，用户浏览体验最好
-4. setup 生成的 Caddyfile 监听 :80，macOS 上不需要 sudo
-5. 不要问用户太多配置问题——默认值已经合理，开箱即用
+1. **安装**：优先用 `pip install git+https://github.com/zhixianio/owlia-nest.git`；git 不可用时用 curl+unzip 方式
+2. **首次使用**：`owlia-nest setup` 自动检测环境；如果 setup 后列表为空（config 里 0 个目录），用 `owlia-nest add <dir>` 手动添加
+3. **添加项目目录**：`owlia-nest add <dir>` 后刷新页面即可看到
+4. **产出文件**按目录规范存放，用户浏览体验最好
+5. setup 生成的 Caddyfile 监听 :80，macOS 上不需要 sudo
+6. 不要问用户太多配置问题——默认值已经合理，开箱即用
