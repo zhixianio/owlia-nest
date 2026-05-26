@@ -485,7 +485,6 @@ function addExcludeExt(){{
   }});
 }}
 function quickExcludeDir(name,btn){{
-  alert('clicked: '+name); // DEBUG
   if (btn.textContent === '↩ 撤销') {{
     api('POST','{api_base}/api/remove-exclude-dir',{{dir:name}}).then(function(r){{
       if(r.ok){{ toast('已恢复目录: '+name); setTimeout(function(){{location.reload()}},800); }}
@@ -520,6 +519,15 @@ function toast(msg){{
   e.textContent=msg; document.body.appendChild(e);
   setTimeout(function(){{ e.style.opacity='0'; setTimeout(function(){{if(e.parentNode)e.remove()}},300); }},2500);
 }}
+// Delegated click handler for exclude buttons
+document.addEventListener('click',function(e){{
+  var btn = e.target.closest('.btn-tiny');
+  if(!btn) return;
+  var d = btn.getAttribute('data-exclude-dir');
+  if(d){{ quickExcludeDir(d,btn); return; }}
+  var ext = btn.getAttribute('data-exclude-ext');
+  if(ext){{ quickExcludeExt(ext,btn); return; }}
+}});
     else alert(r.error||'Failed');
   }});
 }}
@@ -684,8 +692,8 @@ def file_card(f, href):
         f'<span class="file-date">{time_ago(f["mtime"])}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
         f'<span class="file-actions">'
-        f'<button class="btn-tiny" title="排除此目录" onclick="quickExcludeDir(&quot;{dname}&quot;,this)">📁⊘</button>'
-        + (f'<button class="btn-tiny" title="排除 .{ext}" onclick="quickExcludeExt(&quot;.{ext}&quot;,this)">📎⊘</button>' if ext else '') +
+        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="排除此目录">📁⊘</button>'
+        + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="排除 .{ext}">📎⊘</button>' if ext else '') +
         f'</span></div>'
     )
 
