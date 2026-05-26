@@ -651,12 +651,6 @@ def render_home(files, prefix=""):
   </div>
 </header>
 {upgrade_banner}
-  <div class="header-right">
-    <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
-    <select class="theme-select" id="themeSelect">{theme_opts}</select>
-    <button class="theme-select" onclick="location.reload()" title="刷新">↻</button>
-  </div>
-</header>
 <div id="settingsPanel" class="settings-panel" style="display:none">
   <div class="settings-title">📂 监控目录</div>
   <div id="dirList" class="dir-list">加载中…</div>
