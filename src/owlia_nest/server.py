@@ -493,7 +493,7 @@ function quickExcludeDir(name,btn){{
   }} else {{
     toast('将排除目录: '+name+'\\n（相同目录下的其他文件也会一并隐藏）');
     api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
-      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除目录: '+name); }}
+      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除目录: '+name); setTimeout(function(){{location.reload()}},1200); }}
       else alert(r.error||'排除失败');
     }}).catch(function(e){{ alert('网络错误: '+e); }});
   }}
@@ -507,7 +507,7 @@ function quickExcludeExt(ext,btn){{
   }} else {{
     toast('将排除类型: '+ext+'\\n（所有同扩展名文件都会被隐藏）');
     api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
-      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除类型: '+ext); }}
+      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除类型: '+ext); setTimeout(function(){{location.reload()}},1200); }}
       else alert(r.error||'排除失败');
     }}).catch(function(e){{ alert('网络错误: '+e); }});
   }}
