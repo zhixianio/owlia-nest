@@ -105,12 +105,12 @@ def _check_remote_version():
         return _VERSION_CACHE
     try:
         req = urllib.request.Request(
-            "https://api.github.com/repos/zhixianio/owlia-nest/releases/latest",
+            "https://api.github.com/repos/zhixianio/owlia-nest/tags",
             headers={"Accept": "application/vnd.github+json", "User-Agent": "owlia-nest"}
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
-            latest = data.get("tag_name", "").lstrip("v")
+            latest = data[0]["name"].lstrip("v") if data else None
     except Exception:
         latest = None
     local = _get_local_version()
