@@ -620,8 +620,12 @@ def render_home(files, prefix=""):
             secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">暂无内容</p></section>')
 
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    ver = _check_remote_version()
+    local_ver = ver["local"]
+    upgrade_badge = f' <a href="https://github.com/zhixianio/owlia-nest/releases" target="_blank" style="color:var(--accent);font-size:0.75rem;text-decoration:none;margin-left:0.25rem">🆕 v{ver["latest"]}</a>' if ver.get("has_update") else ""
+    version_info = f'<span class="version-info">v{local_ver}{upgrade_badge}</span>'
     header = f"""<header>
-  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div>
+  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1><p>PA 产出文档中心 · {version_info}</p></div>
   <div class="header-right">
     <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select>
