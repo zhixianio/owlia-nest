@@ -267,11 +267,9 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .dir-input:focus { outline: 2px solid var(--accent); }
 .btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
 .btn-add:hover { opacity: 0.85; }
-.btn-tiny { font-size: 0.65rem; padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 4px; background: none; cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
-.btn-tiny:hover { opacity: 1; border-color: var(--accent); }
-.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; opacity: 0.6; transition: opacity 0.15s; }
-.file-card:hover .file-actions { opacity: 1; }
-@media (hover: none) { .file-actions { opacity: 0.7; } }
+.btn-tiny { font-size: 0.7rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; touch-action: manipulation; }
+.btn-tiny:hover { border-color: var(--accent); }
+.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; }
 .file-card { position: relative; }
 .exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 .exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
@@ -491,13 +489,13 @@ function quickExcludeDir(name,btn){{
     api('POST','{api_base}/api/remove-exclude-dir',{{dir:name}}).then(function(r){{
       if(r.ok){{ toast('已恢复目录: '+name); setTimeout(function(){{location.reload()}},800); }}
       else alert(r.error||'操作失败');
-    }});
+    }}).catch(function(e){{ alert('网络错误: '+e); }});
   }} else {{
     toast('将排除目录: '+name+'\n（相同目录下的其他文件也会一并隐藏）');
     api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
       if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除目录: '+name); }}
       else alert(r.error||'排除失败');
-    }});
+    }}).catch(function(e){{ alert('网络错误: '+e); }});
   }}
 }}
 function quickExcludeExt(ext,btn){{
@@ -505,13 +503,13 @@ function quickExcludeExt(ext,btn){{
     api('POST','{api_base}/api/remove-exclude-ext',{{ext:ext}}).then(function(r){{
       if(r.ok){{ toast('已恢复类型: '+ext); setTimeout(function(){{location.reload()}},800); }}
       else alert(r.error||'操作失败');
-    }});
+    }}).catch(function(e){{ alert('网络错误: '+e); }});
   }} else {{
     toast('将排除类型: '+ext+'\n（所有同扩展名文件都会被隐藏）');
     api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
       if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除类型: '+ext); }}
       else alert(r.error||'排除失败');
-    }});
+    }}).catch(function(e){{ alert('网络错误: '+e); }});
   }}
 }}
 function toast(msg){{
