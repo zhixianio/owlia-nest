@@ -106,7 +106,7 @@ http://<hostname>/docs/
 - `owlia-nest serve --port 9999`
 
 ### macOS 自启不工作
-- 手动加载：`launchctl load ~/Library/LaunchAgents/com.owlia.docs.plist`
+- 手动加载：`launchctl load ~/Library/LaunchAgents/com.owlia.nest.plist`
 - 检查日志：`cat /tmp/owlia-nest.log`
 
 ### Linux 自启不工作

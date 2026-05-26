@@ -271,12 +271,14 @@ function removeDir(d){{
 
 CATEGORIES = {
     "recent": ("🕐", "最近更新"), "doc": ("📄", "文档"),
-    "code": ("💻", "代码"), "config": ("⚙️", "配置"), "dirs": ("📂", "目录"),
+    "code": ("💻", "代码"), "config": ("⚙️", "配置"), "media": ("🎬", "媒体"), "dirs": ("📂", "目录"),
 }
 _FILE_ICON = {
     "md": "📄", "txt": "📝",
     "py": "🐍", "ts": "🔷", "js": "📜", "html": "🌐", "css": "🎨",
     "json": "⚙️", "yaml": "⚙️", "yml": "⚙️", "toml": "⚙️",
+    "png": "🖼️", "jpg": "🖼️", "jpeg": "🖼️", "gif": "🖼️", "webp": "🖼️", "svg": "🖼️",
+    "mp3": "🎵", "wav": "🎵", "ogg": "🎵", "m4a": "🎵", "opus": "🎵",
 }
 
 # ── File scanning ─────────────────────────────────────────────────
@@ -326,7 +328,9 @@ def scan_file(path, root):
 def scan_files(targets):
     files, dirs_list = [], []
     skip_parts = {"__pycache__", "node_modules", ".git"}
-    valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml"}
+    valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml",
+                 ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"}
     for target in targets:
         if not target.exists():
             continue
@@ -365,6 +369,7 @@ def classify(f):
     if ext in ("md", "txt"): return "doc"
     if ext in ("py", "ts", "js", "tsx", "jsx", "html", "css", "scss"): return "code"
     if ext in ("json", "yaml", "yml", "toml", "cfg", "ini", "env", "lock"): return "config"
+    if ext in ("png", "jpg", "jpeg", "gif", "webp", "svg", "mp3", "wav", "ogg", "m4a", "opus"): return "media"
     return "other"
 
 def icon_for(f):
@@ -472,6 +477,29 @@ def render_txt(path, prefix=""):
 <div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
     return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
 
+def render_media(path, prefix=""):
+    """Render image/audio files with inline embed."""
+    ext = path.suffix.lower()
+    theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    media_url = f"{prefix}/media?f={path.name}&r={path.parent}"
+
+    _audio_mime = {".mp3": "mpeg", ".wav": "wav", ".ogg": "ogg", ".m4a": "mp4", ".opus": "opus"}
+
+    if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+        elem = f'<img src="{media_url}" alt="{path.name}" style="max-width:100%;height:auto;border-radius:6px;display:block">'
+    elif ext in _audio_mime:
+        elem = f'<audio controls preload="auto" style="width:100%;max-width:480px"><source src="{media_url}" type="audio/{_audio_mime[ext]}"></audio>'
+    else:
+        elem = f'<p style="color:var(--muted)">暂不支持预览此文件类型</p>'
+
+    body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
+  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+<div style="margin:1rem 0">{elem}</div>
+<div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{path.name} · {size_fmt(path.stat().st_size)}</div>
+<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+
 # ── WSGI/HTTP handler ────────────────────────────────────────────
 def create_app(targets=None, prefix=""):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -517,10 +545,32 @@ def create_app(targets=None, prefix=""):
                     self.send_error(404); return
                 fpath = Path(f_root) / f_rel
                 if fpath.exists() and fpath.is_file():
-                    if fpath.suffix == ".md":
+                    ext = fpath.suffix.lower()
+                    if ext == ".md":
                         self._html(render_md(fpath, prefix))
+                    elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+                                ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
+                        self._html(render_media(fpath, prefix))
                     else:
                         self._html(render_txt(fpath, prefix))
+                else:
+                    self.send_error(404, "File not found")
+            elif path == "/media":
+                f_rel = q.get("f", [None])[0]
+                f_root = q.get("r", [None])[0]
+                if not f_rel or not f_root:
+                    self.send_error(404); return
+                fpath = Path(f_root) / f_rel
+                if fpath.exists() and fpath.is_file():
+                    ext = fpath.suffix.lower()
+                    mime_map = {
+                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+                        ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                        ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".opus": "audio/opus",
+                    }
+                    mime = mime_map.get(ext, "application/octet-stream")
+                    self._send(fpath.read_bytes(), mime)
                 else:
                     self.send_error(404, "File not found")
             else:

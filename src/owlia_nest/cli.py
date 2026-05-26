@@ -90,7 +90,7 @@ def cmd_serve(args):
 
 def cmd_setup(args):
     """Auto-configure everything: init config, detect Caddy, generate configs."""
-    print("🦉 Owlia Docs Setup\n")
+    print("🦉 Owlia Nest Setup\n")
 
     # Step 1: init
     config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
@@ -121,13 +121,13 @@ def cmd_setup(args):
 
     if platform == "macos":
         # Generate launchd plist
-        plist_path = Path.home() / "Library" / "LaunchAgents" / "com.owlia.docs.plist"
+        plist_path = Path.home() / "Library" / "LaunchAgents" / "com.owlia.nest.plist"
         plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.owlia.docs</string>
+    <string>com.owlia.nest</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
@@ -158,7 +158,7 @@ def cmd_setup(args):
     handle /docs* {{
         reverse_proxy localhost:8788
     }}
-    respond "🦉 Owlia Docs → http://localhost/docs/" 200
+    respond "🦉 Owlia Nest → http://localhost/docs/" 200
 }}"""
         caddy_dir = Path.home() / ".config" / "owlia-nest"
         caddy_path = caddy_dir / "Caddyfile"
@@ -179,7 +179,7 @@ def cmd_setup(args):
     else:
         # Linux: systemd
         unit = """[Unit]
-Description=Owlia Docs Server
+Description=Owlia Nest Server
 After=network.target
 
 [Service]
@@ -203,7 +203,7 @@ WantedBy=multi-user.target
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Owlia Docs — PA document browser")
+    parser = argparse.ArgumentParser(description="Owlia Nest — PA document browser")
     sub = parser.add_subparsers(dest="command")
 
     p_init = sub.add_parser("init", help="Create default config")

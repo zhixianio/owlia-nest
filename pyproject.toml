@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-owlia-nest = "owlia_docs.cli:main"
+owlia-nest = "owlia_nest.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
