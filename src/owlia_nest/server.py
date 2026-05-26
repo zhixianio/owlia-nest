@@ -586,13 +586,14 @@ def save_config(dirs, config_path=None, exclude_dirs=None, exclude_exts=None):
         config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     path = _expand(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {"dirs": [str(d) for d in dirs]}
     existing = {}
     if path.exists():
         try:
             existing = json.loads(path.read_text())
         except Exception:
             pass
+    # Build new data preserving any keys from existing that aren't being overridden
+    data = {"dirs": [str(d) for d in dirs]}
     data["exclude_dirs"] = exclude_dirs if exclude_dirs is not None else existing.get("exclude_dirs", [])
     data["exclude_exts"] = exclude_exts if exclude_exts is not None else existing.get("exclude_exts", [])
     path.write_text(json.dumps(data, indent=2))
@@ -857,10 +858,12 @@ def create_app(targets=None, prefix=""):
             elif path == "/manifest.json":
                 self._send(_manifest(prefix), "application/json; charset=utf-8")
             elif path == "/api/dirs":
+                # Reload from disk to catch external changes
+                _t, _e, _x = load_config(config_path)
                 self._send(json.dumps({
-                    "dirs": [str(d) for d in targets],
-                    "exclude_dirs": exclude_dirs,
-                    "exclude_exts": exclude_exts,
+                    "dirs": [str(d) for d in _t],
+                    "exclude_dirs": _e,
+                    "exclude_exts": _x,
                 }), "application/json; charset=utf-8")
             elif path == "/api/version":
                 info = _check_remote_version()
