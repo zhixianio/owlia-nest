@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import urllib.request
 from pathlib import Path
 
 import markdown
@@ -68,6 +69,58 @@ def theme_dict(name):
                 out[k] = v
     return out
 
+
+LOCAL_VERSION = None
+_VERSION_CHECKED_AT = 0
+_VERSION_CACHE = None
+_VERSION_TTL = 3600  # 1 hour
+
+def _get_local_version():
+    """Read version from installed package metadata."""
+    global LOCAL_VERSION
+    if LOCAL_VERSION:
+        return LOCAL_VERSION
+    try:
+        from importlib.metadata import version
+        LOCAL_VERSION = version("owlia-nest")
+    except Exception:
+        try:
+            # Fallback: read from pyproject.toml next to this file
+            pp = Path(__file__).resolve().parents[2] / "pyproject.toml"
+            if pp.exists():
+                import re
+                text = pp.read_text()
+                m = re.search(r'version\s*=\s*"([^"]+)"', text)
+                if m:
+                    LOCAL_VERSION = m.group(1)
+        except Exception:
+            LOCAL_VERSION = "0.0.0"
+    return LOCAL_VERSION
+
+def _check_remote_version():
+    """Check GitHub for latest release tag. Cached for VERSION_TTL."""
+    global _VERSION_CHECKED_AT, _VERSION_CACHE
+    now = time.time()
+    if _VERSION_CACHE and (now - _VERSION_CHECKED_AT) < _VERSION_TTL:
+        return _VERSION_CACHE
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/zhixianio/owlia-nest/releases/latest",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "owlia-nest"}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+            latest = data.get("tag_name", "").lstrip("v")
+    except Exception:
+        latest = None
+    local = _get_local_version()
+    _VERSION_CACHE = {
+        "local": local,
+        "latest": latest or local,
+        "has_update": latest is not None and latest != local,
+    }
+    _VERSION_CHECKED_AT = now
+    return _VERSION_CACHE
 
 def _manifest(prefix=""):
     return json.dumps({
@@ -301,6 +354,22 @@ function showUpdateToast(){{
     t.textContent = '更新中…';
   }};
   document.body.appendChild(t);
+}}
+// Version check (GitHub releases)
+setTimeout(checkVersion, 5000);
+setInterval(checkVersion, 30*60*1000);
+function checkVersion(){{
+  api('GET','{api_base}/api/version').then(function(info){{
+    if (info && info.has_update && info.latest) {{
+      var id = 'upgradeBanner';
+      if (document.getElementById(id)) return;
+      var b = document.createElement('div');
+      b.id = id;
+      b.style.cssText = 'position:fixed;bottom:1rem;left:1rem;right:1rem;background:var(--bg);border:2px solid var(--accent);color:var(--fg);padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9998;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.2);max-width:500px;margin:0 auto;';
+      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> 已发布（当前 v'+info.local+'）<br><span style="font-size:0.78rem;color:var(--muted)">pip install --upgrade git+https://github.com/zhixianio/owlia-nest.git</span><br><button onclick="this.parentNode.remove()" style="margin-top:0.5rem;padding:0.25rem 0.75rem;border:1px solid var(--border);border-radius:6px;background:var(--accent);color:#fff;cursor:pointer;font-size:0.8rem">知道了</button>';
+      document.body.appendChild(b);
+    }}
+  }});
 }}
 </script>
 <script>
@@ -673,6 +742,9 @@ def create_app(targets=None, prefix=""):
                     "exclude_dirs": exclude_dirs,
                     "exclude_exts": exclude_exts,
                 }), "application/json; charset=utf-8")
+            elif path == "/api/version":
+                info = _check_remote_version()
+                self._send(json.dumps(info), "application/json; charset=utf-8")
             elif path == "/":
                 files = scan_files(targets, exclude_dirs, exclude_exts)
                 self._html(render_home(files, prefix))
