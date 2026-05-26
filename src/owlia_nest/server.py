@@ -869,7 +869,9 @@ def create_app(targets=None, prefix=""):
                 info = _check_remote_version()
                 self._send(json.dumps(info), "application/json; charset=utf-8")
             elif path == "/":
-                files = scan_files(targets, exclude_dirs, exclude_exts)
+                # Reload config from disk to avoid stale state
+                _tm, _em, _xm = load_config(config_path)
+                files = scan_files(_tm, _em, _xm)
                 self._html(render_home(files, prefix))
             elif path == "/view":
                 f_rel = q.get("f", [None])[0]
@@ -922,6 +924,14 @@ def create_app(targets=None, prefix=""):
             except json.JSONDecodeError:
                 data = {}
             targets, exclude_dirs, exclude_exts = _state
+
+            # Sync in-memory state from disk before mutating (prevents stale overwrites)
+            if path.startswith("/api/") and path not in ("/api/version", "/api/dirs"):
+                _disk_t, _disk_e, _disk_x = load_config(config_path)
+                _state[0] = _disk_t
+                _state[1] = _disk_e
+                _state[2] = _disk_x
+                targets, exclude_dirs, exclude_exts = _disk_t, _disk_e, _disk_x
 
             if path == "/api/add-dir":
                 d = data.get("dir", "").strip()
