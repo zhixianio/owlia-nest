@@ -611,8 +611,14 @@ def scan_file(path, root):
 def scan_files(targets, exclude_dirs=None, exclude_exts=None):
     files = []
     skip_parts = {"__pycache__", "node_modules", ".git"}
+    skip_paths = []  # full paths to exclude
     if exclude_dirs:
-        skip_parts.update(exclude_dirs)
+        for d in exclude_dirs:
+            dp = Path(d)
+            if dp.is_absolute() or "/" in d:
+                skip_paths.append(dp)
+            else:
+                skip_parts.add(d)
     exclude_ext_set = set(exclude_exts) if exclude_exts else set()
     valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml",
                  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
@@ -628,6 +634,9 @@ def scan_files(targets, exclude_dirs=None, exclude_exts=None):
             for fpath in sorted(target.rglob("*")):
                 if fpath.is_file() and not fpath.name.startswith("."):
                     if skip_parts & set(fpath.parts):
+                        continue
+                    # Check if file is inside an excluded full path
+                    if any(skip_path in fpath.parents for skip_path in skip_paths):
                         continue
                     ext = fpath.suffix.lower()
                     if ext in exclude_ext_set:
