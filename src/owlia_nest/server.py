@@ -69,19 +69,20 @@ def theme_dict(name):
     return out
 
 
-MANIFEST_JSON = json.dumps({
-    "name": "Owlia Nest",
-    "short_name": "Owlia Nest",
-    "start_url": "/",
-    "scope": "/",
-    "display": "standalone",
-    "background_color": "#0d1117",
-    "theme_color": "#0969da",
-    "icons": [
-        {"src": "/docs/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
-        {"src": "/docs/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
-    ],
-}, indent=2)
+def _manifest(prefix=""):
+    return json.dumps({
+        "name": "Owlia Nest",
+        "short_name": "Owlia Nest",
+        "start_url": f"{prefix}/",
+        "scope": f"{prefix}/",
+        "display": "standalone",
+        "background_color": "#0d1117",
+        "theme_color": "#0969da",
+        "icons": [
+            {"src": f"{prefix}/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": f"{prefix}/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+        ],
+    }, indent=2)
 
 def _load_icon(name):
     p = Path(__file__).resolve().parent / "icons" / name
@@ -595,7 +596,7 @@ def create_app(targets=None, prefix=""):
                     mime, data = ICONS["favicon-32.png"]
                     self._send(data, mime)
             elif path == "/manifest.json":
-                self._send(MANIFEST_JSON, "application/json; charset=utf-8")
+                self._send(_manifest(prefix), "application/json; charset=utf-8")
             elif path == "/api/dirs":
                 self._send(json.dumps({
                     "dirs": [str(d) for d in targets],
