@@ -269,8 +269,9 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .btn-add:hover { opacity: 0.85; }
 .btn-tiny { font-size: 0.65rem; padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 4px; background: none; cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
 .btn-tiny:hover { opacity: 1; border-color: var(--accent); }
-.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; opacity: 0; transition: opacity 0.15s; }
+.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; opacity: 0.6; transition: opacity 0.15s; }
 .file-card:hover .file-actions { opacity: 1; }
+@media (hover: none) { .file-actions { opacity: 0.7; } }
 .file-card { position: relative; }
 .exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 .exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
