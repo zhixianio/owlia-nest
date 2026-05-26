@@ -1,4 +1,4 @@
-"""OWlia Docs server — Markdown renderer with themes, PWA, categorization."""
+"""OWlia Docs server — Markdown renderer with themes, PWA, categorization, i18n."""
 
 import json
 import os
@@ -7,6 +7,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import markdown
 from markdown.extensions import codehilite, fenced_code, tables, toc
@@ -17,6 +18,140 @@ MD_EXTENSIONS = [
     tables.TableExtension(),
     toc.TocExtension(permalink=True),
 ]
+
+# ── I18n ──────────────────────────────────────────────────────────
+# Translation dictionary: Chinese key → {"zh": ..., "en": ...}
+T = {
+    # Brand / Header
+    "Owlia Nest":           {"zh": "Owlia Nest", "en": "Owlia Nest"},
+    "PA 产出文档中心":      {"zh": "PA 产出文档中心", "en": "PA Output Docs Hub"},
+
+    # Categories
+    "最近更新": {"zh": "最近更新", "en": "Recent"},
+    "文档":     {"zh": "文档",     "en": "Docs"},
+    "代码":     {"zh": "代码",     "en": "Code"},
+    "配置":     {"zh": "配置",     "en": "Config"},
+    "媒体":     {"zh": "媒体",     "en": "Media"},
+
+    # Buttons & Actions
+    "刷新":     {"zh": "刷新",     "en": "Refresh"},
+    "管理目录": {"zh": "管理目录", "en": "Settings"},
+
+    # Settings Panel
+    "📂 监控目录":                  {"zh": "📂 监控目录",                  "en": "📂 Monitored Dirs"},
+    "输入目录路径，如 ~/my-project": {"zh": "输入目录路径，如 ~/my-project", "en": "Enter path, e.g. ~/my-project"},
+    "+ 添加":                       {"zh": "+ 添加",                       "en": "+ Add"},
+    "🚫 排除子目录":                 {"zh": "🚫 排除子目录",                 "en": "🚫 Exclude Subdirs"},
+    "目录名，如 archive":            {"zh": "目录名，如 archive",            "en": "Dir name, e.g. archive"},
+    "+ 排除":                       {"zh": "+ 排除",                       "en": "+ Exclude"},
+    "🚫 排除文件类型":               {"zh": "🚫 排除文件类型",               "en": "🚫 Exclude Extensions"},
+    "扩展名，如 .json":              {"zh": "扩展名，如 .json",              "en": "Extension, e.g. .json"},
+
+    # Navigation
+    "← Home":     {"zh": "← Home",     "en": "← Home"},
+    "← 返回首页": {"zh": "← 返回首页", "en": "← Back to Home"},
+
+    # Content placeholders
+    "暂无内容":     {"zh": "暂无内容",     "en": "No content yet"},
+    "加载中…":     {"zh": "加载中…",     "en": "Loading…"},
+    "暂无监控目录": {"zh": "暂无监控目录", "en": "No monitored dirs"},
+    "无":           {"zh": "无",           "en": "None"},
+
+    # File Card
+    "排除此目录": {"zh": "排除此目录", "en": "Exclude Dir"},
+    "排除类型":   {"zh": "排除类型",   "en": "Exclude Type"},
+
+    # Time ago
+    "刚才":   {"zh": "刚才",   "en": "just now"},
+    "分钟前": {"zh": "分钟前", "en": "m ago"},
+    "小时前": {"zh": "小时前", "en": "h ago"},
+    "天前":   {"zh": "天前",   "en": "d ago"},
+
+    # Media viewer
+    "暂不支持预览此文件类型": {"zh": "暂不支持预览此文件类型", "en": "Preview not supported"},
+
+    # Upgrade / Version
+    "已发布（当前 v": {"zh": "已发布（当前 v", "en": "released (current v"},
+    "）":             {"zh": "）",             "en": ")"},
+    "⚡ 一键升级":    {"zh": "⚡ 一键升级",    "en": "⚡ Upgrade"},
+
+    # ── JS-side strings (toast, alert, confirm, dynamic HTML) ──
+    "🔄 新版本可用，点击更新":         {"zh": "🔄 新版本可用，点击更新",         "en": "🔄 New version available, tap to update"},
+    "更新中…":                        {"zh": "更新中…",                        "en": "Updating…"},
+    "⏳ 升级中…":                     {"zh": "⏳ 升级中…",                     "en": "⏳ Upgrading…"},
+    "✅ 升级完成，等待服务重启…":     {"zh": "✅ 升级完成，等待服务重启…",     "en": "✅ Upgrade done, restarting…"},
+    "点击刷新":                        {"zh": "点击刷新",                        "en": "Click to reload"},
+    "✅ 服务已重启 ":                  {"zh": "✅ 服务已重启 ",                  "en": "✅ Restarted "},
+    "❌ 升级失败: ":                   {"zh": "❌ 升级失败: ",                   "en": "❌ Upgrade failed: "},
+    "未知错误":                        {"zh": "未知错误",                        "en": "unknown error"},
+    "忽略":                            {"zh": "忽略",                            "en": "Dismiss"},
+    "移除":                            {"zh": "移除",                            "en": "Remove"},
+    "移除排除":                        {"zh": "移除排除",                        "en": "Remove exclusion"},
+    "移除 ":                           {"zh": "移除 ",                           "en": "Remove "},
+    " ？":                             {"zh": " ？",                             "en": "?"},
+    "操作失败":                        {"zh": "操作失败",                        "en": "Operation failed"},
+    "网络错误: ":                      {"zh": "网络错误: ",                      "en": "Network error: "},
+    "将排除目录: ":                    {"zh": "将排除目录: ",                    "en": "Excluding dir: "},
+    "\n（相同目录下的其他文件也会一并隐藏）": {"zh": "\n（相同目录下的其他文件也会一并隐藏）", "en": "\n(other files in the same dir will also be hidden)"},
+    "✅ 已排除目录: ":                 {"zh": "✅ 已排除目录: ",                 "en": "✅ Excluded dir: "},
+    "已恢复目录: ":                    {"zh": "已恢复目录: ",                    "en": "Restored dir: "},
+    "将排除类型: ":                    {"zh": "将排除类型: ",                    "en": "Excluding type: "},
+    "\n（所有同扩展名文件都会被隐藏）": {"zh": "\n（所有同扩展名文件都会被隐藏）", "en": "\n(all files with this extension will be hidden)"},
+    "✅ 已排除类型: ":                 {"zh": "✅ 已排除类型: ",                 "en": "✅ Excluded type: "},
+    "已恢复类型: ":                    {"zh": "已恢复类型: ",                    "en": "Restored type: "},
+    "添加失败: ":                      {"zh": "添加失败: ",                      "en": "Add failed: "},
+    "↩ 撤销":                         {"zh": "↩ 撤销",                         "en": "↩ Undo"},
+}
+
+
+def _(text, lang="zh"):
+    """Look up translation for `text` in language `lang`. Falls back to `text`."""
+    entry = T.get(text)
+    if entry:
+        return entry.get(lang, text)
+    return text
+
+
+def _lang_attr(lang):
+    """Return HTML lang attribute value for the given language code."""
+    return "zh-Hans" if lang == "zh" else "en"
+
+
+def _js_i18n(lang="zh"):
+    """Generate a JS object literal with all translations for the given language."""
+    entries = {k: v.get(lang, k) for k, v in T.items()}
+    return json.dumps(entries, ensure_ascii=False)
+
+
+def get_lang(handler):
+    """Detect language from request: ?lang= query → cookie → Accept-Language → default 'zh'."""
+    parsed = urlparse(handler.path)
+    q = parse_qs(parsed.query)
+
+    # 1. Query param
+    lang = q.get("lang", [None])[0]
+    if lang in ("zh", "en"):
+        return lang
+
+    # 2. Cookie
+    cookie = handler.headers.get("Cookie", "")
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith("lang="):
+            lang = part[5:].split(";")[0].strip()
+            if lang in ("zh", "en"):
+                return lang
+
+    # 3. Accept-Language header
+    al = handler.headers.get("Accept-Language", "")
+    if "zh" in al:
+        return "zh"
+    if "en" in al:
+        return "en"
+
+    # 4. Default
+    return "zh"
+
 
 # ── Themes ────────────────────────────────────────────────────────
 THEMES = {
@@ -214,6 +349,8 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .logo { border-radius: 6px; flex-shrink: 0; }
 .header-right { display: flex; gap: 0.5rem; align-items: center; }
 .theme-select { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; }
+.lang-toggle { font-size: 0.75rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; white-space: nowrap; }
+.lang-toggle:hover { border-color: var(--accent); }
 .breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
 .breadcrumb a { color: var(--accent); text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
@@ -281,9 +418,16 @@ header p { color: var(--muted); font-size: 0.85rem; }
 }
 """
 
+# ── Page template ─────────────────────────────────────────────────
+# Placeholders used in .format():
+#   {lang_attr}    – HTML lang attribute ("zh-Hans" or "en")
+#   {lang}         – language code for JS ("zh" or "en")
+#   {__js_i18n__}  – JSON dict of all T entries in the current lang
+#   {title} {body} {head_extra} {__theme_css__} {__theme_js__}
+#   {BASE_CSS} {default_theme} {api_base}
 PAGE_TPL = """\
 <!doctype html>
-<html lang="zh-Hans">
+<html lang="{lang_attr}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -306,6 +450,16 @@ PAGE_TPL = """\
 {body}
 </div>
 <script>
+var __LANG = '{lang}';
+var I18N = {__js_i18n__};
+function _(k){{ return I18N[k] || k; }}
+function toggleLang(){{
+  var n = __LANG === 'zh' ? 'en' : 'zh';
+  document.cookie = 'lang=' + n + ';path=/;max-age=31536000';
+  var u = new URL(location.href);
+  u.searchParams.set('lang', n);
+  location.href = u.toString();
+}}
 {__theme_js__}
 (function(){{
   var sel=document.getElementById('themeSelect');
@@ -361,10 +515,10 @@ function showUpdateToast(){{
   var t = document.createElement('div');
   t.id = 'updateToast';
   t.style.cssText = 'position:fixed;bottom:1rem;right:1rem;background:var(--accent);color:#fff;padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9999;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
-  t.textContent = '🔄 新版本可用，点击更新';
+  t.textContent = _('🔄 新版本可用，点击更新');
   t.onclick = function(){{
     if (_swReg && _swReg.waiting) {{ _swReg.waiting.postMessage('skip-waiting'); }}
-    t.textContent = '更新中…';
+    t.textContent = _('更新中…');
   }};
   document.body.appendChild(t);
 }}
@@ -377,11 +531,11 @@ function upgradeNow(){{
   var btn = document.querySelector('#upgradeBanner .btn-add');
   var status = document.getElementById('upgradeStatus');
   var status2 = document.getElementById('upgradeStatus2');
-  if (btn) {{ btn.disabled = true; btn.textContent = '⏳ 升级中…'; }}
+  if (btn) {{ btn.disabled = true; btn.textContent = _('⏳ 升级中…'); }}
   api('POST','{api_base}/api/upgrade').then(function(r){{
     if (r.ok) {{
-      if (status) {{ status.textContent = '✅ 升级完成，等待服务重启…'; status.style.color = '#22c55e'; }}
-      if (status2) {{ status2.textContent = '✅ 升级完成，等待服务重启…'; status2.style.color = '#22c55e'; }}
+      if (status) {{ status.textContent = _('✅ 升级完成，等待服务重启…'); status.style.color = '#22c55e'; }}
+      if (status2) {{ status2.textContent = _('✅ 升级完成，等待服务重启…'); status2.style.color = '#22c55e'; }}
       // Poll for server to come back
       var attempts = 0;
       function poll() {{
@@ -389,7 +543,7 @@ function upgradeNow(){{
         fetch('{api_base}/').then(function(res){{
           if (res.ok) {{
             var el = status || status2;
-            if (el) {{ el.innerHTML = '✅ 服务已重启 <a href="#" onclick="location.reload()" style="color:var(--accent);text-decoration:underline">点击刷新</a>'; }}
+            if (el) {{ el.innerHTML = _('✅ 服务已重启 ') + '<a href="#" onclick="location.reload()" style="color:var(--accent);text-decoration:underline">' + _('点击刷新') + '</a>'; }}
           }} else if (attempts < 30) {{ setTimeout(poll, 2000); }}
         }}).catch(function(){{
           if (attempts < 30) setTimeout(poll, 2000);
@@ -397,9 +551,9 @@ function upgradeNow(){{
       }}
       setTimeout(poll, 3000);
     }} else {{
-      if (status) {{ status.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误'); status.style.color = '#ef4444'; }}
-      if (status2) {{ status2.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误'); status2.style.color = '#ef4444'; }}
-      if (btn) {{ btn.disabled = false; btn.textContent = '⚡ 一键升级'; }}
+      if (status) {{ status.textContent = _('❌ 升级失败: ') + (r.error || r.output || _('未知错误')); status.style.color = '#ef4444'; }}
+      if (status2) {{ status2.textContent = _('❌ 升级失败: ') + (r.error || r.output || _('未知错误')); status2.style.color = '#ef4444'; }}
+      if (btn) {{ btn.disabled = false; btn.textContent = _('⚡ 一键升级'); }}
     }}
   }});
 }}
@@ -415,7 +569,7 @@ function checkVersion(){{
       var b = document.createElement('div');
       b.id = id;
       b.style.cssText = 'position:fixed;bottom:1rem;left:1rem;right:1rem;background:var(--bg);border:2px solid var(--accent);color:var(--fg);padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9998;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.2);max-width:500px;margin:0 auto;';
-      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> 已发布（当前 v'+info.local+'）<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">⚡ 一键升级</button><br><small id="upgradeStatus2" style="color:var(--muted)"></small><br><button onclick="this.parentNode.remove()" style="margin-top:0.25rem;padding:0.15rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:0.75rem">忽略</button>';
+      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> ' + _('已发布（当前 v') + info.local + _('）') + '<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">' + _('⚡ 一键升级') + '</button><br><small id="upgradeStatus2" style="color:var(--muted)"></small><br><button onclick="this.parentNode.remove()" style="margin-top:0.25rem;padding:0.15rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:0.75rem">' + _('忽略') + '</button>';
       document.body.appendChild(b);
     }}
   }});
@@ -434,11 +588,11 @@ function loadDirs(){{
     var excludeDirs = data.exclude_dirs || [];
     var excludeExts = data.exclude_exts || [];
     var el=document.getElementById('dirList');
-    if(el){{ el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="移除">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">暂无监控目录</span>'; }}
+    if(el){{ el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="'+_('移除')+'">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">'+_('暂无监控目录')+'</span>'; }}
     var exEl=document.getElementById('excludeDirList');
-    if(exEl){{ exEl.innerHTML=excludeDirs.map(function(d){{ return '<span class="exclude-tag">📁 '+d+' <button class="dir-remove" data-exdir="'+encodeURIComponent(d)+'" title="移除排除">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">无</span>'; }}
+    if(exEl){{ exEl.innerHTML=excludeDirs.map(function(d){{ return '<span class="exclude-tag">📁 '+d+' <button class="dir-remove" data-exdir="'+encodeURIComponent(d)+'" title="'+_('移除排除')+'">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">'+_('无')+'</span>'; }}
     var extEl=document.getElementById('excludeExtList');
-    if(extEl){{ extEl.innerHTML=excludeExts.map(function(e){{ return '<span class="exclude-tag">'+e+' <button class="dir-remove" data-exext="'+encodeURIComponent(e)+'" title="移除排除">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">无</span>'; }}
+    if(extEl){{ extEl.innerHTML=excludeExts.map(function(e){{ return '<span class="exclude-tag">'+e+' <button class="dir-remove" data-exext="'+encodeURIComponent(e)+'" title="'+_('移除排除')+'">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">'+_('无')+'</span>'; }}
     // Attach handlers
     document.querySelectorAll('.dir-remove[data-dir]').forEach(function(btn){{ btn.onclick=function(){{ removeDir(decodeURIComponent(this.dataset.dir)); }}; }});
     document.querySelectorAll('.dir-remove[data-exdir]').forEach(function(btn){{ btn.onclick=function(){{ removeExcludeDir(decodeURIComponent(this.dataset.exdir)); }}; }});
@@ -455,7 +609,7 @@ function addDir(){{
 }}
 function removeDir(d){{
   d=decodeURIComponent(d);
-  if(!confirm('移除 '+d+' ？'))return;
+  if(!confirm(_('移除 ') + d + _(' ？')))return;
   api('POST','{api_base}/api/remove-dir',{{dir:d}}).then(function(r){{
     if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
     else alert(r.error||'Failed');
@@ -481,35 +635,35 @@ function addExcludeExt(){{
   if(!inp||!inp.value.trim())return;
   api('POST','{api_base}/api/exclude-ext',{{ext:inp.value.trim()}}).then(function(r){{
     if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert('添加失败: ' + (r.error || '未知错误'));
+    else alert(_('添加失败: ') + (r.error || _('未知错误')));
   }});
 }}
 function quickExcludeDir(name,btn){{
-  if (btn.textContent === '↩ 撤销') {{
+  if (btn.textContent === _('↩ 撤销')) {{
     api('POST','{api_base}/api/remove-exclude-dir',{{dir:name}}).then(function(r){{
-      if(r.ok){{ toast('已恢复目录: '+name); setTimeout(function(){{location.reload()}},800); }}
-      else alert(r.error||'操作失败');
-    }}).catch(function(e){{ alert('网络错误: '+e); }});
+      if(r.ok){{ toast(_('已恢复目录: ')+name); setTimeout(function(){{location.reload()}},800); }}
+      else alert(r.error||_('操作失败'));
+    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
   }} else {{
-    toast('将排除目录: '+name+'\\n（相同目录下的其他文件也会一并隐藏）');
+    toast(_('将排除目录: ')+name+_('\\n（相同目录下的其他文件也会一并隐藏）'));
     api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
-      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除目录: '+name); setTimeout(function(){{location.reload()}},1200); }}
-      else alert(r.error||'排除失败');
-    }}).catch(function(e){{ alert('网络错误: '+e); }});
+      if(r.ok){{ btn.textContent=_('↩ 撤销'); btn.title=_('↩ 撤销'); toast(_('✅ 已排除目录: ')+name); setTimeout(function(){{location.reload()}},1200); }}
+      else alert(r.error||_('操作失败'));
+    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
   }}
 }}
 function quickExcludeExt(ext,btn){{
-  if (btn.textContent === '↩ 撤销') {{
+  if (btn.textContent === _('↩ 撤销')) {{
     api('POST','{api_base}/api/remove-exclude-ext',{{ext:ext}}).then(function(r){{
-      if(r.ok){{ toast('已恢复类型: '+ext); setTimeout(function(){{location.reload()}},800); }}
-      else alert(r.error||'操作失败');
-    }}).catch(function(e){{ alert('网络错误: '+e); }});
+      if(r.ok){{ toast(_('已恢复类型: ')+ext); setTimeout(function(){{location.reload()}},800); }}
+      else alert(r.error||_('操作失败'));
+    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
   }} else {{
-    toast('将排除类型: '+ext+'\\n（所有同扩展名文件都会被隐藏）');
+    toast(_('将排除类型: ')+ext+_('\\n（所有同扩展名文件都会被隐藏）'));
     api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
-      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除类型: '+ext); setTimeout(function(){{location.reload()}},1200); }}
-      else alert(r.error||'排除失败');
-    }}).catch(function(e){{ alert('网络错误: '+e); }});
+      if(r.ok){{ btn.textContent=_('↩ 撤销'); btn.title=_('↩ 撤销'); toast(_('✅ 已排除类型: ')+ext); setTimeout(function(){{location.reload()}},1200); }}
+      else alert(r.error||_('操作失败'));
+    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
   }}
 }}
 function toast(msg){{
@@ -653,12 +807,16 @@ def size_fmt(n):
     if n < 1024 * 1024: return f"{n / 1024:.0f}KB"
     return f"{n / (1024*1024):.0f}MB"
 
-def time_ago(mtime):
+def time_ago(mtime, lang="zh"):
     diff = time.time() - mtime
-    if diff < 60: return "刚才"
-    if diff < 3600: return f"{int(diff / 60)}分钟前"
-    if diff < 86400: return f"{int(diff / 3600)}小时前"
-    if diff < 604800: return f"{int(diff / 86400)}天前"
+    if diff < 60:
+        return _("刚才", lang)
+    if diff < 3600:
+        return f"{int(diff / 60)}{_('分钟前', lang)}"
+    if diff < 86400:
+        return f"{int(diff / 3600)}{_('小时前', lang)}"
+    if diff < 604800:
+        return f"{int(diff / 86400)}{_('天前', lang)}"
     return time.strftime("%m-%d %H:%M", time.localtime(mtime))
 
 def classify(f):
@@ -676,7 +834,7 @@ def icon_for(f):
     return _FILE_ICON.get(ext, "📁" if f["is_dir"] else "📎")
 
 # ── HTML builders ─────────────────────────────────────────────────
-def mk_page(title, body, head_extra="", default_theme="github-dark", prefix=""):
+def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", lang="zh"):
     theme_css = THEMES[default_theme]["css"].strip()
     theme_json = json.dumps({k: theme_dict(k) for k in THEMES})
     theme_js = f"var THEMES = {theme_json};"
@@ -685,9 +843,11 @@ def mk_page(title, body, head_extra="", default_theme="github-dark", prefix=""):
         __theme_css__=theme_css, __theme_js__=theme_js,
         BASE_CSS=BASE_CSS, default_theme=default_theme,
         api_base=prefix,
+        lang_attr=_lang_attr(lang), lang=lang,
+        __js_i18n__=_js_i18n(lang),
     )
 
-def file_card(f, href):
+def file_card(f, href, lang="zh"):
     dname = os.path.dirname(f["path"])
     fpath = f["path"]
     ext = f["name"].rsplit(".", 1)[-1].lower() if "." in f["name"] else ""
@@ -696,29 +856,29 @@ def file_card(f, href):
         f'<span class="file-icon">{icon_for(f)}</span>'
         f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{f["name"]}</a>'
         f'<br><span class="file-path">{fpath}</span></span>'
-        f'<span class="file-date">{time_ago(f["mtime"])}</span>'
+        f'<span class="file-date">{time_ago(f["mtime"], lang)}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
         f'<span class="file-actions">'
-        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="排除此目录">排除目录</button>'
-        + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="排除 .{ext}">排除类型</button>' if ext else '') +
+        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="{_("排除此目录", lang)}">{_("排除此目录", lang)}</button>'
+        + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="{_("排除类型", lang)} .{ext}">{_("排除类型", lang)}</button>' if ext else '') +
         f'</span></div>'
     )
 
-def render_home(files, prefix=""):
+def render_home(files, prefix="", lang="zh"):
     view_url = prefix + "/view"
     cats = {k: [] for k in CATEGORIES}
-    cats["recent"] = [file_card(f, view_url) for f in files[:30]]
+    cats["recent"] = [file_card(f, view_url, lang) for f in files[:30]]
     for f in files:
         c = classify(f)
         if c in cats:
-            cats[c].append(file_card(f, view_url))
+            cats[c].append(file_card(f, view_url, lang))
 
     tabs = '<nav class="tabs-bar" aria-label="Categories">'
     for key, (emoji, label) in CATEGORIES.items():
         active = ' class="tab-active"' if key == "recent" else ""
         cnt = len(cats[key])
         cnt_str = f' <span class="tab-count">{cnt}</span>' if cnt else ""
-        tabs += f'<button{active} data-tab="{key}">{emoji} {label}{cnt_str}</button>'
+        tabs += f'<button{active} data-tab="{key}">{emoji} {_(label, lang)}{cnt_str}</button>'
     tabs += '</nav>'
 
     secs = []
@@ -727,7 +887,7 @@ def render_home(files, prefix=""):
         if cards:
             secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}>{"".join(cards)}</section>')
         else:
-            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">暂无内容</p></section>')
+            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">{_("暂无内容", lang)}</p></section>')
 
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     ver = _check_remote_version()
@@ -738,64 +898,75 @@ def render_home(files, prefix=""):
     upgrade_banner = ""
     if has_update and latest_ver:
         version_html += f' <span class="version-upgrade" onclick="upgradeNow()">🆕 v{latest_ver}</span>'
-        upgrade_banner = f'<div id="upgradeBanner" class="upgrade-banner">🆕 <strong>v{latest_ver}</strong> 已发布（当前 v{local_ver}）<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">⚡ 一键升级</button><br><small id="upgradeStatus" style="color:var(--muted)"></small></div>'
+        upgrade_banner = (
+            f'<div id="upgradeBanner" class="upgrade-banner">'
+            f'🆕 <strong>v{latest_ver}</strong> {_("已发布（当前 v", lang)}{local_ver}{_("）", lang)}'
+            f'<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">{_("⚡ 一键升级", lang)}</button>'
+            f'<br><small id="upgradeStatus" style="color:var(--muted)"></small>'
+            f'</div>'
+        )
     header = f"""<header>
-  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><div><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div></div>
+  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><div><h1>Owlia Nest</h1><p>{_("PA 产出文档中心", lang)}</p></div></div>
   <div class="header-right">
+    <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     {version_html}
-    <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
+    <button class="theme-select" id="settingsToggle" title="{_("管理目录", lang)}" onclick="toggleSettings()">⚙️</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select>
-    <button class="theme-select" onclick="location.reload()" title="刷新">↻</button>
+    <button class="theme-select" onclick="location.reload()" title="{_("刷新", lang)}">↻</button>
   </div>
 </header>
 {upgrade_banner}
 <div id="settingsPanel" class="settings-panel" style="display:none">
-  <div class="settings-title">📂 监控目录</div>
-  <div id="dirList" class="dir-list">加载中…</div>
+  <div class="settings-title">{_("📂 监控目录", lang)}</div>
+  <div id="dirList" class="dir-list">{_("加载中…", lang)}</div>
   <div class="add-dir-row">
-    <input id="dirInput" type="text" class="dir-input" placeholder="输入目录路径，如 ~/my-project">
-    <button class="btn-add" onclick="addDir()">+ 添加</button>
+    <input id="dirInput" type="text" class="dir-input" placeholder="{_("输入目录路径，如 ~/my-project", lang)}">
+    <button class="btn-add" onclick="addDir()">{_("+ 添加", lang)}</button>
   </div>
-  <div class="settings-title" style="margin-top:1rem">🚫 排除子目录</div>
-  <div id="excludeDirList" class="exclude-list">加载中…</div>
+  <div class="settings-title" style="margin-top:1rem">{_("🚫 排除子目录", lang)}</div>
+  <div id="excludeDirList" class="exclude-list">{_("加载中…", lang)}</div>
   <div class="add-dir-row">
-    <input id="excludeDirInput" type="text" class="dir-input" placeholder="目录名，如 archive">
-    <button class="btn-add" onclick="addExcludeDir()">+ 排除</button>
+    <input id="excludeDirInput" type="text" class="dir-input" placeholder="{_("目录名，如 archive", lang)}">
+    <button class="btn-add" onclick="addExcludeDir()">{_("+ 排除", lang)}</button>
   </div>
-  <div class="settings-title" style="margin-top:1rem">🚫 排除文件类型</div>
-  <div id="excludeExtList" class="exclude-list">加载中…</div>
+  <div class="settings-title" style="margin-top:1rem">{_("🚫 排除文件类型", lang)}</div>
+  <div id="excludeExtList" class="exclude-list">{_("加载中…", lang)}</div>
   <div class="add-dir-row">
-    <input id="excludeExtInput" type="text" class="dir-input" placeholder="扩展名，如 .json">
-    <button class="btn-add" onclick="addExcludeExt()">+ 排除</button>
+    <input id="excludeExtInput" type="text" class="dir-input" placeholder="{_("扩展名，如 .json", lang)}">
+    <button class="btn-add" onclick="addExcludeExt()">{_("+ 排除", lang)}</button>
   </div>
 </div>"""
 
     head_extra = f'<link rel="manifest" href="{prefix}/manifest.json">'
     body = header + tabs + "\n".join(secs)
-    return mk_page("Owlia Nest", body, head_extra, prefix=prefix)
+    return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
-def render_md(path, prefix=""):
+def render_md(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
-  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+  <div class="header-right">
+    <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
+    <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
 <div class="markdown-body">{html}</div>
-<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+<div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
-def render_txt(path, prefix=""):
+def render_txt(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
-  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+  <div class="header-right">
+    <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
+    <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
 <pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
-<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+<div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
-def render_media(path, prefix=""):
+def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
     ext = path.suffix.lower()
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
@@ -808,20 +979,21 @@ def render_media(path, prefix=""):
     elif ext in _audio_mime:
         elem = f'<audio controls preload="auto" style="width:100%;max-width:480px"><source src="{media_url}" type="audio/{_audio_mime[ext]}"></audio>'
     else:
-        elem = f'<p style="color:var(--muted)">暂不支持预览此文件类型</p>'
+        elem = f'<p style="color:var(--muted)">{_("暂不支持预览此文件类型", lang)}</p>'
 
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
-  <div class="header-right"><select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">← Home</a> / {path.name}</div>
+  <div class="header-right">
+    <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
+    <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
 <div style="margin:1rem 0">{elem}</div>
 <div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{path.name} · {size_fmt(path.stat().st_size)}</div>
-<div class="back-link"><a href="{prefix}/">← 返回首页</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix)
+<div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
+    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 # ── WSGI/HTTP handler ────────────────────────────────────────────
 def create_app(targets=None, prefix=""):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from urllib.parse import parse_qs, urlparse
 
     if targets is None:
         targets, exclude_dirs, exclude_exts = load_config()
@@ -845,6 +1017,7 @@ def create_app(targets=None, prefix=""):
                 path = "/" + path
             q = parse_qs(parsed.query)
             targets, exclude_dirs, exclude_exts = _state
+            lang = get_lang(self)
 
             if path == "/sw.js":
                 self._send(_sw_js(prefix), "application/javascript; charset=utf-8")
@@ -872,7 +1045,7 @@ def create_app(targets=None, prefix=""):
                 # Reload config from disk to avoid stale state
                 _tm, _em, _xm = load_config(config_path)
                 files = scan_files(_tm, _em, _xm)
-                self._html(render_home(files, prefix))
+                self._html(render_home(files, prefix, lang))
             elif path == "/view":
                 f_rel = q.get("f", [None])[0]
                 f_root = q.get("r", [None])[0]
@@ -882,12 +1055,12 @@ def create_app(targets=None, prefix=""):
                 if fpath.exists() and fpath.is_file():
                     ext = fpath.suffix.lower()
                     if ext == ".md":
-                        self._html(render_md(fpath, prefix))
+                        self._html(render_md(fpath, prefix, lang))
                     elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
                                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
-                        self._html(render_media(fpath, prefix))
+                        self._html(render_media(fpath, prefix, lang))
                     else:
-                        self._html(render_txt(fpath, prefix))
+                        self._html(render_txt(fpath, prefix, lang))
                 else:
                     self.send_error(404, "File not found")
             elif path == "/media":
@@ -1009,6 +1182,7 @@ def create_app(targets=None, prefix=""):
                     )
                     ok = result.returncode == 0
                     msg = result.stdout.split("\n")[-3:] if ok else result.stderr[-200:]
+
                     if ok:
                         # Restart in-place: replace this process with upgraded code
                         # Also try launchd/systemd as fallback
