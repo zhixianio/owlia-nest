@@ -207,6 +207,8 @@ header { padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-botto
 header h1 { font-size: 1.5rem; color: var(--accent); }
 header p { color: var(--muted); font-size: 0.85rem; }
 .header-brand { display: flex; align-items: center; gap: 0.5rem; }
+.header-brand h1 { margin: 0; }
+.header-brand p { margin: 0; }
 .logo { border-radius: 6px; flex-shrink: 0; }
 .header-right { display: flex; gap: 0.5rem; align-items: center; }
 .theme-select { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; }
@@ -254,6 +256,11 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .dir-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 0.25rem; line-height: 1; }
 .dir-remove:hover { color: #ef4444; }
 .add-dir-row { display: flex; gap: 0.5rem; }
+.version-tag { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: var(--code-bg); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; line-height: 1.4; }
+.version-upgrade { font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 600; cursor: pointer; }
+.version-upgrade:hover { text-decoration: underline; }
+.upgrade-banner { margin: 0 0 1rem 0; padding: 0.6rem 1rem; background: var(--tint); border: 1px solid var(--accent); border-radius: 8px; font-size: 0.85rem; text-align: center; }
+.upgrade-banner code { font-size: 0.78rem; background: var(--bg); padding: 0.15em 0.4em; border-radius: 4px; }
 .dir-input { flex: 1; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 0.8rem; }
 .dir-input:focus { outline: 2px solid var(--accent); }
 .btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
@@ -354,6 +361,11 @@ function showUpdateToast(){{
     t.textContent = '更新中…';
   }};
   document.body.appendChild(t);
+}}
+function showUpgradeCmd(e){{
+  e.preventDefault();
+  var b = document.getElementById('upgradeBanner');
+  if(b) b.style.display = b.style.display === 'none' ? '' : 'none';
 }}
 // Version check (GitHub releases)
 setTimeout(checkVersion, 5000);
@@ -622,10 +634,23 @@ def render_home(files, prefix=""):
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     ver = _check_remote_version()
     local_ver = ver["local"]
-    upgrade_badge = f' <a href="https://github.com/zhixianio/owlia-nest/releases" target="_blank" style="color:var(--accent);font-size:0.75rem;text-decoration:none;margin-left:0.25rem">🆕 v{ver["latest"]}</a>' if ver.get("has_update") else ""
-    version_info = f'<span class="version-info">v{local_ver}{upgrade_badge}</span>'
+    has_update = ver.get("has_update")
+    latest_ver = ver.get("latest", "")
+    version_html = f'<span class="version-tag">v{local_ver}</span>'
+    upgrade_banner = ""
+    if has_update and latest_ver:
+        version_html += f' <a href="#" onclick="showUpgradeCmd(event)" class="version-upgrade">🆕 v{latest_ver}</a>'
+        upgrade_banner = f'<div id="upgradeBanner" class="upgrade-banner">🆕 <strong>v{latest_ver}</strong> 已发布（当前 v{local_ver}）<br><code>pip install --upgrade git+https://github.com/zhixianio/owlia-nest.git</code><br><small style="color:var(--muted)">更新后重启服务即可</small></div>'
     header = f"""<header>
-  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1><p>PA 产出文档中心 · {version_info}</p></div>
+  <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><div><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div></div>
+  <div class="header-right">
+    {version_html}
+    <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
+    <select class="theme-select" id="themeSelect">{theme_opts}</select>
+    <button class="theme-select" onclick="location.reload()" title="刷新">↻</button>
+  </div>
+</header>
+{upgrade_banner}
   <div class="header-right">
     <button class="theme-select" id="settingsToggle" title="管理目录" onclick="toggleSettings()">⚙️</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select>
