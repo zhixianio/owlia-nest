@@ -167,6 +167,8 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .dir-input:focus { outline: 2px solid var(--accent); }
 .btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
 .btn-add:hover { opacity: 0.85; }
+.exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
+.exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
 @media (max-width: 600px) {
   .file-card { flex-wrap: wrap; gap: 0.3rem; }
   .file-date, .file-size { min-width: auto; }
@@ -238,14 +240,20 @@ function toggleSettings(){{
 }}
 function api(method,url,body){{ return fetch(url,{{method:method,headers:{{'Content-Type':'application/json'}},body:body?JSON.stringify(body):null}}).then(function(r){{return r.json()}}); }}
 function loadDirs(){{
-  api('GET','{api_base}/api/dirs').then(function(dirs){{
+  api('GET','{api_base}/api/dirs').then(function(data){{
+    var dirs = Array.isArray(data) ? data : data.dirs || [];
+    var excludeDirs = data.exclude_dirs || [];
+    var excludeExts = data.exclude_exts || [];
     var el=document.getElementById('dirList');
-    if(!el)return;
-    el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="移除">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">暂无监控目录</span>';
-    // Attach click handlers to remove buttons
-    document.querySelectorAll('.dir-remove').forEach(function(btn){{
-      btn.onclick=function(){{ removeDir(decodeURIComponent(this.dataset.dir)); }};
-    }});
+    if(el){{ el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="移除">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">暂无监控目录</span>'; }}
+    var exEl=document.getElementById('excludeDirList');
+    if(exEl){{ exEl.innerHTML=excludeDirs.map(function(d){{ return '<span class="exclude-tag">📁 '+d+' <button class="dir-remove" data-exdir="'+encodeURIComponent(d)+'" title="移除排除">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">无</span>'; }}
+    var extEl=document.getElementById('excludeExtList');
+    if(extEl){{ extEl.innerHTML=excludeExts.map(function(e){{ return '<span class="exclude-tag">'+e+' <button class="dir-remove" data-exext="'+encodeURIComponent(e)+'" title="移除排除">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">无</span>'; }}
+    // Attach handlers
+    document.querySelectorAll('.dir-remove[data-dir]').forEach(function(btn){{ btn.onclick=function(){{ removeDir(decodeURIComponent(this.dataset.dir)); }}; }});
+    document.querySelectorAll('.dir-remove[data-exdir]').forEach(function(btn){{ btn.onclick=function(){{ removeExcludeDir(decodeURIComponent(this.dataset.exdir)); }}; }});
+    document.querySelectorAll('.dir-remove[data-exext]').forEach(function(btn){{ btn.onclick=function(){{ removeExcludeExt(decodeURIComponent(this.dataset.exext)); }}; }});
   }});
 }}
 function addDir(){{
@@ -264,6 +272,36 @@ function removeDir(d){{
     else alert(r.error||'Failed');
   }});
 }}
+function addExcludeDir(){{
+  var inp=document.getElementById('excludeDirInput');
+  if(!inp||!inp.value.trim())return;
+  api('POST','{api_base}/api/exclude-dir',{{dir:inp.value.trim()}}).then(function(r){{
+    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
+function removeExcludeDir(d){{
+  d=decodeURIComponent(d);
+  api('POST','{api_base}/api/remove-exclude-dir',{{dir:d}}).then(function(r){{
+    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
+function addExcludeExt(){{
+  var inp=document.getElementById('excludeExtInput');
+  if(!inp||!inp.value.trim())return;
+  api('POST','{api_base}/api/exclude-ext',{{ext:inp.value.trim()}}).then(function(r){{
+    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
+function removeExcludeExt(e){{
+  e=decodeURIComponent(e);
+  api('POST','{api_base}/api/remove-exclude-ext',{{ext:e}}).then(function(r){{
+    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert(r.error||'Failed');
+  }});
+}}
 </script>
 </body>
 </html>
@@ -271,7 +309,7 @@ function removeDir(d){{
 
 CATEGORIES = {
     "recent": ("🕐", "最近更新"), "doc": ("📄", "文档"),
-    "code": ("💻", "代码"), "config": ("⚙️", "配置"), "media": ("🎬", "媒体"), "dirs": ("📂", "目录"),
+    "code": ("💻", "代码"), "config": ("⚙️", "配置"), "media": ("🎬", "媒体"),
 }
 _FILE_ICON = {
     "md": "📄", "txt": "📝",
@@ -302,16 +340,28 @@ def load_config(config_path=None):
     path = _expand(config_path)
     if path.exists():
         data = json.loads(path.read_text())
-        return [_expand(p) for p in data.get("dirs", [])]
+        dirs = [_expand(p) for p in data.get("dirs", [])]
+        excludes = data.get("exclude_dirs", [])
+        exclude_exts = data.get("exclude_exts", [])
+        return dirs, excludes, exclude_exts
     # fallback: scan default dirs if they exist
-    return [_expand(d) for d in DEFAULT_DIRS if _expand(d).exists()]
+    dirs = [_expand(d) for d in DEFAULT_DIRS if _expand(d).exists()]
+    return dirs, [], []
 
-def save_config(dirs, config_path=None):
+def save_config(dirs, config_path=None, exclude_dirs=None, exclude_exts=None):
     if config_path is None:
         config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     path = _expand(config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {"dirs": [str(d) for d in dirs]}
+    existing = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text())
+        except Exception:
+            pass
+    data["exclude_dirs"] = exclude_dirs if exclude_dirs is not None else existing.get("exclude_dirs", [])
+    data["exclude_exts"] = exclude_exts if exclude_exts is not None else existing.get("exclude_exts", [])
     path.write_text(json.dumps(data, indent=2))
     return path
 
@@ -325,9 +375,12 @@ def scan_file(path, root):
         "rel_path": str(path.relative_to(root)), "root": str(root),
     }
 
-def scan_files(targets):
-    files, dirs_list = [], []
+def scan_files(targets, exclude_dirs=None, exclude_exts=None):
+    files = []
     skip_parts = {"__pycache__", "node_modules", ".git"}
+    if exclude_dirs:
+        skip_parts.update(exclude_dirs)
+    exclude_ext_set = set(exclude_exts) if exclude_exts else set()
     valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml",
                  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
                  ".mp3", ".wav", ".ogg", ".m4a", ".opus"}
@@ -339,15 +392,17 @@ def scan_files(targets):
             info["rel_path"] = target.name
             files.append(info)
         elif target.is_dir():
-            dirs_list.append(target)
             for fpath in sorted(target.rglob("*")):
                 if fpath.is_file() and not fpath.name.startswith("."):
                     if skip_parts & set(fpath.parts):
                         continue
-                    if fpath.suffix.lower() in valid_ext:
+                    ext = fpath.suffix.lower()
+                    if ext in exclude_ext_set:
+                        continue
+                    if ext in valid_ext:
                         files.append(scan_file(fpath, target))
     files.sort(key=lambda f: f["mtime"], reverse=True)
-    return files, dirs_list
+    return files
 
 # ── Utilities ─────────────────────────────────────────────────────
 def size_fmt(n):
@@ -399,16 +454,7 @@ def file_card(f, href):
         f'<span class="file-size">{size_fmt(f["size"])}</span></div>'
     )
 
-def dir_card(d):
-    return (
-        f'<div class="file-card" data-cat="dirs">'
-        f'<span class="file-icon">📁</span>'
-        f'<span class="file-name" style="color:var(--muted)"><strong>{d.name}</strong>'
-        f'<br><span class="file-path">{d}</span></span>'
-        f'<span class="file-date"></span><span class="file-size"></span></div>'
-    )
-
-def render_home(files, dirs, prefix=""):
+def render_home(files, prefix=""):
     view_url = prefix + "/view"
     cats = {k: [] for k in CATEGORIES}
     cats["recent"] = [file_card(f, view_url) for f in files[:30]]
@@ -416,7 +462,6 @@ def render_home(files, dirs, prefix=""):
         c = classify(f)
         if c in cats:
             cats[c].append(file_card(f, view_url))
-    cats["dirs"] = [dir_card(d) for d in dirs]
 
     tabs = '<nav class="tabs-bar" aria-label="Categories">'
     for key, (emoji, label) in CATEGORIES.items():
@@ -449,6 +494,18 @@ def render_home(files, dirs, prefix=""):
   <div class="add-dir-row">
     <input id="dirInput" type="text" class="dir-input" placeholder="输入目录路径，如 ~/my-project">
     <button class="btn-add" onclick="addDir()">+ 添加</button>
+  </div>
+  <div class="settings-title" style="margin-top:1rem">🚫 排除子目录</div>
+  <div id="excludeDirList" class="exclude-list">加载中…</div>
+  <div class="add-dir-row">
+    <input id="excludeDirInput" type="text" class="dir-input" placeholder="目录名，如 archive">
+    <button class="btn-add" onclick="addExcludeDir()">+ 排除</button>
+  </div>
+  <div class="settings-title" style="margin-top:1rem">🚫 排除文件类型</div>
+  <div id="excludeExtList" class="exclude-list">加载中…</div>
+  <div class="add-dir-row">
+    <input id="excludeExtInput" type="text" class="dir-input" placeholder="扩展名，如 .json">
+    <button class="btn-add" onclick="addExcludeExt()">+ 排除</button>
   </div>
 </div>"""
 
@@ -506,9 +563,15 @@ def create_app(targets=None, prefix=""):
     from urllib.parse import parse_qs, urlparse
 
     if targets is None:
-        targets = load_config()
+        targets, exclude_dirs, exclude_exts = load_config()
+    else:
+        # targets passed directly (from serve arg or loaded elsewhere)
+        if isinstance(targets, tuple) and len(targets) == 3:
+            targets, exclude_dirs, exclude_exts = targets
+        else:
+            exclude_dirs, exclude_exts = [], []
     # Wrap in list to allow mutation from nested Handler
-    _t = [targets]
+    _state = [targets, exclude_dirs, exclude_exts]
     config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     prefix = prefix.rstrip("/")
 
@@ -520,7 +583,7 @@ def create_app(targets=None, prefix=""):
             if not path.startswith("/"):
                 path = "/" + path
             q = parse_qs(parsed.query)
-            targets = _t[0]
+            targets, exclude_dirs, exclude_exts = _state
 
             if path == "/sw.js":
                 self._send(SW_JS, "application/javascript; charset=utf-8")
@@ -534,10 +597,14 @@ def create_app(targets=None, prefix=""):
             elif path == "/manifest.json":
                 self._send(MANIFEST_JSON, "application/json; charset=utf-8")
             elif path == "/api/dirs":
-                self._send(json.dumps([str(d) for d in targets]), "application/json; charset=utf-8")
+                self._send(json.dumps({
+                    "dirs": [str(d) for d in targets],
+                    "exclude_dirs": exclude_dirs,
+                    "exclude_exts": exclude_exts,
+                }), "application/json; charset=utf-8")
             elif path == "/":
-                files, dirs_list = scan_files(targets)
-                self._html(render_home(files, dirs_list, prefix))
+                files = scan_files(targets, exclude_dirs, exclude_exts)
+                self._html(render_home(files, prefix))
             elif path == "/view":
                 f_rel = q.get("f", [None])[0]
                 f_root = q.get("r", [None])[0]
@@ -588,7 +655,7 @@ def create_app(targets=None, prefix=""):
                 data = json.loads(body) if body else {}
             except json.JSONDecodeError:
                 data = {}
-            targets = _t[0]
+            targets, exclude_dirs, exclude_exts = _state
 
             if path == "/api/add-dir":
                 d = data.get("dir", "").strip()
@@ -599,8 +666,8 @@ def create_app(targets=None, prefix=""):
                     self._send(json.dumps({"ok": False, "error": f"not found: {dp}"}), "application/json"); return
                 if dp in targets:
                     self._send(json.dumps({"ok": False, "error": "already exists"}), "application/json"); return
-                _t[0].append(dp)
-                save_config(_t[0], config_path)
+                targets.append(dp)
+                save_config(targets, config_path, exclude_dirs, exclude_exts)
                 self._send(json.dumps({"ok": True, "path": str(dp)}), "application/json")
             elif path == "/api/remove-dir":
                 d = data.get("dir", "").strip()
@@ -608,12 +675,55 @@ def create_app(targets=None, prefix=""):
                     self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
                 dp = Path(d).expanduser().resolve()
                 # Remove by matching resolved path
-                _t[0] = [t for t in _t[0] if t != dp]
-                save_config(_t[0], config_path)
+                _state[0] = [t for t in targets if t != dp]
+                save_config(_state[0], config_path, exclude_dirs, exclude_exts)
                 self._send(json.dumps({"ok": True}), "application/json")
+            elif path == "/api/exclude-dir":
+                d = data.get("dir", "").strip()
+                if not d:
+                    self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
+                if d in exclude_dirs:
+                    self._send(json.dumps({"ok": False, "error": "already excluded"}), "application/json"); return
+                exclude_dirs.append(d)
+                save_config(targets, config_path, exclude_dirs, exclude_exts)
+                self._send(json.dumps({"ok": True, "exclude_dirs": exclude_dirs}), "application/json")
+            elif path == "/api/remove-exclude-dir":
+                d = data.get("dir", "").strip()
+                if not d:
+                    self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
+                if d not in exclude_dirs:
+                    self._send(json.dumps({"ok": False, "error": "not excluded"}), "application/json"); return
+                _state[1] = [e for e in exclude_dirs if e != d]
+                save_config(targets, config_path, _state[1], exclude_exts)
+                self._send(json.dumps({"ok": True, "exclude_dirs": _state[1]}), "application/json")
+            elif path == "/api/exclude-ext":
+                ext = data.get("ext", "").strip()
+                if not ext:
+                    self._send(json.dumps({"ok": False, "error": "missing ext"}), "application/json"); return
+                if not ext.startswith("."):
+                    ext = "." + ext
+                if ext in exclude_exts:
+                    self._send(json.dumps({"ok": False, "error": "already excluded"}), "application/json"); return
+                exclude_exts.append(ext)
+                save_config(targets, config_path, exclude_dirs, exclude_exts)
+                self._send(json.dumps({"ok": True, "exclude_exts": exclude_exts}), "application/json")
+            elif path == "/api/remove-exclude-ext":
+                ext = data.get("ext", "").strip()
+                if not ext:
+                    self._send(json.dumps({"ok": False, "error": "missing ext"}), "application/json"); return
+                if not ext.startswith("."):
+                    ext = "." + ext
+                if ext not in exclude_exts:
+                    self._send(json.dumps({"ok": False, "error": "not excluded"}), "application/json"); return
+                _state[2] = [e for e in exclude_exts if e != ext]
+                save_config(targets, config_path, exclude_dirs, _state[2])
+                self._send(json.dumps({"ok": True, "exclude_exts": _state[2]}), "application/json")
             elif path == "/api/reload":
-                _t[0] = load_config(config_path)
-                self._send(json.dumps({"ok": True, "count": len(_t[0])}), "application/json")
+                new_targets, new_excludes, new_exclude_exts = load_config(config_path)
+                _state[0] = new_targets
+                _state[1] = new_excludes
+                _state[2] = new_exclude_exts
+                self._send(json.dumps({"ok": True, "count": len(new_targets)}), "application/json")
             else:
                 self.send_error(404)
 
@@ -638,7 +748,7 @@ def serve(host="127.0.0.1", port=8788, prefix="", targets=None):
     """Start the HTTP server."""
     from http.server import ThreadingHTTPServer
     if targets is None:
-        targets = load_config()
+        targets = load_config()  # returns (dirs, excludes, exclude_exts)
     prefix = prefix.rstrip("/")
 
     Handler = create_app(targets, prefix)

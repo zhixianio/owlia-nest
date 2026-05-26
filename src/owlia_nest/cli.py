@@ -72,18 +72,22 @@ def cmd_add(args):
 
 def cmd_list(args):
     """List monitored directories."""
-    dirs = load_config()
+    dirs, exclude_dirs, exclude_exts = load_config()
     config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     print(f"Config: {config_path}")
     print(f"Monitored directories ({len(dirs)}):")
     for d in dirs:
         status = "✅" if d.exists() else "❌"
         print(f"  {status} {d}")
+    if exclude_dirs:
+        print(f"Excluded dirs: {', '.join(exclude_dirs)}")
+    if exclude_exts:
+        print(f"Excluded extensions: {', '.join(exclude_exts)}")
 
 
 def cmd_serve(args):
     """Start the docs server."""
-    dirs = load_config()
+    dirs, _, _ = load_config()
     prefix = args.prefix or ""
     serve(host=args.host, port=args.port, prefix=prefix, targets=dirs)
 
