@@ -372,17 +372,30 @@ function showUpgradeCmd(e){{
 function upgradeNow(){{
   var btn = document.querySelector('#upgradeBanner .btn-add');
   var status = document.getElementById('upgradeStatus');
+  var status2 = document.getElementById('upgradeStatus2');
   if (btn) {{ btn.disabled = true; btn.textContent = '⏳ 升级中…'; }}
   api('POST','{api_base}/api/upgrade').then(function(r){{
-    if (status) {{
-      if (r.ok) {{
-        status.textContent = r.restarting ? '✅ 升级成功，正在重启…' : '✅ 升级成功！重启服务生效';
-        status.style.color = '#22c55e';
-      }} else {{
-        status.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误');
-        status.style.color = '#ef4444';
-        if (btn) {{ btn.disabled = false; btn.textContent = '⚡ 一键升级'; }}
+    if (r.ok) {{
+      if (status) {{ status.textContent = '✅ 升级完成，等待服务重启…'; status.style.color = '#22c55e'; }}
+      if (status2) {{ status2.textContent = '✅ 升级完成，等待服务重启…'; status2.style.color = '#22c55e'; }}
+      // Poll for server to come back
+      var attempts = 0;
+      function poll() {{
+        attempts++;
+        fetch('{api_base}/').then(function(res){{
+          if (res.ok) {{
+            var el = status || status2;
+            if (el) {{ el.innerHTML = '✅ 服务已重启 <a href="#" onclick="location.reload()" style="color:var(--accent);text-decoration:underline">点击刷新</a>'; }}
+          }} else if (attempts < 30) {{ setTimeout(poll, 2000); }}
+        }}).catch(function(){{
+          if (attempts < 30) setTimeout(poll, 2000);
+        }});
       }}
+      setTimeout(poll, 3000);
+    }} else {{
+      if (status) {{ status.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误'); status.style.color = '#ef4444'; }}
+      if (status2) {{ status2.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误'); status2.style.color = '#ef4444'; }}
+      if (btn) {{ btn.disabled = false; btn.textContent = '⚡ 一键升级'; }}
     }}
   }});
 }}
