@@ -1,8 +1,17 @@
+import re
 from setuptools import setup, find_packages
+
+# Read version from pyproject.toml to avoid duplication
+try:
+    with open("pyproject.toml") as f:
+        m = re.search(r'version\s*=\s*"([^"]+)"', f.read())
+    version = m.group(1) if m else "0.1.0"
+except Exception:
+    version = "0.1.0"
 
 setup(
     name="owlia-nest",
-    version="0.1.1",
+    version=version,
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={"owlia_nest": ["icons/*"]},
