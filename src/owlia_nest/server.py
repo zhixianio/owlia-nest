@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -367,6 +369,24 @@ function showUpgradeCmd(e){{
   var b = document.getElementById('upgradeBanner');
   if(b) b.style.display = b.style.display === 'none' ? '' : 'none';
 }}
+function upgradeNow(){{
+  var btn = document.querySelector('#upgradeBanner .btn-add');
+  var status = document.getElementById('upgradeStatus');
+  if (btn) {{ btn.disabled = true; btn.textContent = '⏳ 升级中…'; }}
+  api('POST','{api_base}/api/upgrade').then(function(r){{
+    if (status) {{
+      if (r.ok) {{
+        status.textContent = '✅ 升级成功！重启服务生效';
+        status.style.color = '#22c55e';
+      }} else {{
+        status.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误');
+        status.style.color = '#ef4444';
+        if (btn) {{ btn.disabled = false; btn.textContent = '⚡ 一键升级'; }}
+      }}
+    }}
+  }});
+}}
+// Legacy JS upgrade banner button
 // Version check (GitHub releases)
 setTimeout(checkVersion, 5000);
 setInterval(checkVersion, 30*60*1000);
@@ -378,7 +398,7 @@ function checkVersion(){{
       var b = document.createElement('div');
       b.id = id;
       b.style.cssText = 'position:fixed;bottom:1rem;left:1rem;right:1rem;background:var(--bg);border:2px solid var(--accent);color:var(--fg);padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9998;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.2);max-width:500px;margin:0 auto;';
-      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> 已发布（当前 v'+info.local+'）<br><span style="font-size:0.78rem;color:var(--muted)">pip install --upgrade git+https://github.com/zhixianio/owlia-nest.git</span><br><button onclick="this.parentNode.remove()" style="margin-top:0.5rem;padding:0.25rem 0.75rem;border:1px solid var(--border);border-radius:6px;background:var(--accent);color:#fff;cursor:pointer;font-size:0.8rem">知道了</button>';
+      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> 已发布（当前 v'+info.local+'）<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">⚡ 一键升级</button><br><small id="upgradeStatus2" style="color:var(--muted)"></small><br><button onclick="this.parentNode.remove()" style="margin-top:0.25rem;padding:0.15rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:0.75rem">忽略</button>';
       document.body.appendChild(b);
     }}
   }});
@@ -639,8 +659,8 @@ def render_home(files, prefix=""):
     version_html = f'<span class="version-tag">v{local_ver}</span>'
     upgrade_banner = ""
     if has_update and latest_ver:
-        version_html += f' <a href="#" onclick="showUpgradeCmd(event)" class="version-upgrade">🆕 v{latest_ver}</a>'
-        upgrade_banner = f'<div id="upgradeBanner" class="upgrade-banner">🆕 <strong>v{latest_ver}</strong> 已发布（当前 v{local_ver}）<br><code>pip install --upgrade git+https://github.com/zhixianio/owlia-nest.git</code><br><small style="color:var(--muted)">更新后重启服务即可</small></div>'
+        version_html += f' <span class="version-upgrade" onclick="upgradeNow()">🆕 v{latest_ver}</span>'
+        upgrade_banner = f'<div id="upgradeBanner" class="upgrade-banner">🆕 <strong>v{latest_ver}</strong> 已发布（当前 v{local_ver}）<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">⚡ 一键升级</button><br><small id="upgradeStatus" style="color:var(--muted)"></small></div>'
     header = f"""<header>
   <div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><div><h1>Owlia Nest</h1><p>PA 产出文档中心</p></div></div>
   <div class="header-right">
@@ -890,6 +910,20 @@ def create_app(targets=None, prefix=""):
                 _state[1] = new_excludes
                 _state[2] = new_exclude_exts
                 self._send(json.dumps({"ok": True, "count": len(new_targets)}), "application/json")
+            elif path == "/api/upgrade":
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--upgrade",
+                         "git+https://github.com/zhixianio/owlia-nest.git"],
+                        capture_output=True, text=True, timeout=60
+                    )
+                    ok = result.returncode == 0
+                    msg = result.stdout.split("\n")[-3:] if ok else result.stderr[-200:]
+                    self._send(json.dumps({"ok": ok, "output": "\n".join(msg)}),
+                                "application/json")
+                except Exception as e:
+                    self._send(json.dumps({"ok": False, "error": str(e)}),
+                                "application/json")
             else:
                 self.send_error(404)
 
