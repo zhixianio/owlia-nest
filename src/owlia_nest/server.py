@@ -201,7 +201,7 @@ self.addEventListener('message', e => {{
 
 BASE_CSS = """\
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; transition: background 0.3s, color 0.3s; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; transition: background 0.3s, color 0.3s; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 .container { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem; }
 header { padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 header h1 { font-size: 1.5rem; color: var(--accent); }
