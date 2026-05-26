@@ -269,8 +269,9 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .btn-add:hover { opacity: 0.85; }
 .btn-tiny { font-size: 0.65rem; padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 4px; background: none; cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
 .btn-tiny:hover { opacity: 1; border-color: var(--accent); }
-.file-card:hover .btn-tiny { opacity: 0.8; }
-.file-actions { display: flex; gap: 0.2rem; align-items: center; }
+.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; opacity: 0; transition: opacity 0.15s; }
+.file-card:hover .file-actions { opacity: 1; }
+.file-card { position: relative; }
 .exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 .exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
 @media (max-width: 600px) {
@@ -484,17 +485,40 @@ function addExcludeExt(){{
     else alert('添加失败: ' + (r.error || '未知错误'));
   }});
 }}
-function quickExcludeDir(name){{
-  api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
-    if(r.ok){{ location.reload(); }}
-    else alert('排除失败: ' + (r.error || '未知错误'));
-  }});
+function quickExcludeDir(name,btn){{
+  if (btn.textContent === '↩ 撤销') {{
+    api('POST','{api_base}/api/remove-exclude-dir',{{dir:name}}).then(function(r){{
+      if(r.ok){{ toast('已恢复目录: '+name); setTimeout(function(){{location.reload()}},800); }}
+      else alert(r.error||'操作失败');
+    }});
+  }} else {{
+    toast('将排除目录: '+name+'\n（相同目录下的其他文件也会一并隐藏）');
+    api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
+      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除目录: '+name); }}
+      else alert(r.error||'排除失败');
+    }});
+  }}
 }}
-function quickExcludeExt(ext){{
-  api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
-    if(r.ok){{ location.reload(); }}
-    else alert('排除失败: ' + (r.error || '未知错误'));
-  }});
+function quickExcludeExt(ext,btn){{
+  if (btn.textContent === '↩ 撤销') {{
+    api('POST','{api_base}/api/remove-exclude-ext',{{ext:ext}}).then(function(r){{
+      if(r.ok){{ toast('已恢复类型: '+ext); setTimeout(function(){{location.reload()}},800); }}
+      else alert(r.error||'操作失败');
+    }});
+  }} else {{
+    toast('将排除类型: '+ext+'\n（所有同扩展名文件都会被隐藏）');
+    api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
+      if(r.ok){{ btn.textContent='↩ 撤销'; btn.title='撤销排除'; toast('✅ 已排除类型: '+ext); }}
+      else alert(r.error||'排除失败');
+    }});
+  }}
+}}
+function toast(msg){{
+  var id='_toast'; var e=document.getElementById(id); if(e)e.remove();
+  e=document.createElement('div'); e.id=id;
+  e.style.cssText='position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:0.6rem 1.2rem;border-radius:8px;font-size:0.85rem;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity 0.3s';
+  e.textContent=msg; document.body.appendChild(e);
+  setTimeout(function(){{ e.style.opacity='0'; setTimeout(function(){{if(e.parentNode)e.remove()}},300); }},2500);
 }}
     else alert(r.error||'Failed');
   }});
@@ -657,12 +681,12 @@ def file_card(f, href):
         f'<span class="file-icon">{icon_for(f)}</span>'
         f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{f["name"]}</a>'
         f'<br><span class="file-path">{fpath}</span></span>'
-        f'<span class="file-actions">'
-        f'<button class="btn-tiny" title="排除此目录" onclick="quickExcludeDir(&quot;{dname}&quot;)">📁⊘</button>'
-        + (f'<button class="btn-tiny" title="排除 .{ext}" onclick="quickExcludeExt(&quot;.{ext}&quot;)">📎⊘</button>' if ext else '') +
-        f'</span>'
         f'<span class="file-date">{time_ago(f["mtime"])}</span>'
-        f'<span class="file-size">{size_fmt(f["size"])}</span></div>'
+        f'<span class="file-size">{size_fmt(f["size"])}</span>'
+        f'<span class="file-actions">'
+        f'<button class="btn-tiny" title="排除此目录" onclick="quickExcludeDir(&quot;{dname}&quot;,this)">📁⊘</button>'
+        + (f'<button class="btn-tiny" title="排除 .{ext}" onclick="quickExcludeExt(&quot;.{ext}&quot;,this)">📎⊘</button>' if ext else '') +
+        f'</span></div>'
     )
 
 def render_home(files, prefix=""):
