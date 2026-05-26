@@ -376,7 +376,7 @@ function upgradeNow(){{
   api('POST','{api_base}/api/upgrade').then(function(r){{
     if (status) {{
       if (r.ok) {{
-        status.textContent = '✅ 升级成功！重启服务生效';
+        status.textContent = r.restarting ? '✅ 升级成功，正在重启…' : '✅ 升级成功！重启服务生效';
         status.style.color = '#22c55e';
       }} else {{
         status.textContent = '❌ 升级失败: ' + (r.error || r.output || '未知错误');
@@ -919,7 +919,15 @@ def create_app(targets=None, prefix=""):
                     )
                     ok = result.returncode == 0
                     msg = result.stdout.split("\n")[-3:] if ok else result.stderr[-200:]
-                    self._send(json.dumps({"ok": ok, "output": "\n".join(msg)}),
+                    if ok:
+                        # Schedule restart in background
+                        subprocess.Popen(
+                            ["bash", "-c", "sleep 2; launchctl stop com.owlia.nest 2>/dev/null; launchctl kickstart gui/$(id -u)/com.owlia.nest 2>/dev/null; systemctl --user restart owlia-nest 2>/dev/null"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True
+                        )
+                    self._send(json.dumps({"ok": ok, "output": "\n".join(msg),
+                                           "restarting": ok}),
                                 "application/json")
                 except Exception as e:
                     self._send(json.dumps({"ok": False, "error": str(e)}),
