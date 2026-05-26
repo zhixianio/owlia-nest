@@ -268,7 +268,7 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
 .btn-add:hover { opacity: 0.85; }
 .file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; z-index: 1; }
-.btn-tiny { font-size: 0.7rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); cursor: pointer; touch-action: manipulation; }
+.btn-tiny { font-size: 0.7rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); color: var(--fg); cursor: pointer; touch-action: manipulation; }
 .btn-tiny:hover { border-color: var(--accent); }
 .file-card { position: relative; }
 .exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
