@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+LOG="/tmp/owlia-nest.log"
+ERR="/tmp/owlia-nest.err"
+
+# Kill any existing process on port 8788
+lsof -ti :8788 | xargs kill -9 2>/dev/null || true
+sleep 0.5
+
+while true; do
+  echo "[$(date)] Starting Owlia Nest..." >> "$LOG"
+  /usr/bin/python3 -m owlia_nest serve --port 8788 --host 127.0.0.1 --prefix /docs >> "$LOG" 2>> "$ERR" &
+  PYTHON_PID=$!
+  sleep 2
+  /opt/homebrew/bin/caddy run --config /Users/zhixian/clawd/tools/docs-server/Caddyfile >> "$LOG" 2>> "$ERR" &
+  CADDY_PID=$!
+  # Wait for Python to exit (e.g. after upgrade), then restart
+  wait $PYTHON_PID 2>/dev/null
+  echo "[$(date)] Python exited, restarting in 1s..." >> "$LOG"
+  kill $CADDY_PID 2>/dev/null || true
+  sleep 1
+done

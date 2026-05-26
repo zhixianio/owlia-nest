@@ -1010,9 +1010,10 @@ def create_app(targets=None, prefix=""):
                     ok = result.returncode == 0
                     msg = result.stdout.split("\n")[-3:] if ok else result.stderr[-200:]
                     if ok:
-                        # Schedule restart in background
+                        # Restart in-place: replace this process with upgraded code
+                        # Also try launchd/systemd as fallback
                         subprocess.Popen(
-                            ["bash", "-c", "sleep 2; launchctl stop com.owlia.nest 2>/dev/null; launchctl kickstart gui/$(id -u)/com.owlia.nest 2>/dev/null; systemctl --user restart owlia-nest 2>/dev/null"],
+                            ["bash", "-c", "sleep 0.5; launchctl stop com.owlia.nest 2>/dev/null; kill $(lsof -ti :8788) 2>/dev/null; true"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             start_new_session=True
                         )
