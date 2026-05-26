@@ -267,6 +267,10 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .dir-input:focus { outline: 2px solid var(--accent); }
 .btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
 .btn-add:hover { opacity: 0.85; }
+.btn-tiny { font-size: 0.65rem; padding: 0.1rem 0.35rem; border: 1px solid var(--border); border-radius: 4px; background: none; cursor: pointer; opacity: 0.5; transition: opacity 0.15s; }
+.btn-tiny:hover { opacity: 1; border-color: var(--accent); }
+.file-card:hover .btn-tiny { opacity: 0.8; }
+.file-actions { display: flex; gap: 0.2rem; align-items: center; }
 .exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
 .exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
 @media (max-width: 600px) {
@@ -477,6 +481,21 @@ function addExcludeExt(){{
   if(!inp||!inp.value.trim())return;
   api('POST','{api_base}/api/exclude-ext',{{ext:inp.value.trim()}}).then(function(r){{
     if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
+    else alert('添加失败: ' + (r.error || '未知错误'));
+  }});
+}}
+function quickExcludeDir(name){{
+  api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
+    if(r.ok){{ location.reload(); }}
+    else alert('排除失败: ' + (r.error || '未知错误'));
+  }});
+}}
+function quickExcludeExt(ext){{
+  api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
+    if(r.ok){{ location.reload(); }}
+    else alert('排除失败: ' + (r.error || '未知错误'));
+  }});
+}}
     else alert(r.error||'Failed');
   }});
 }}
@@ -630,11 +649,18 @@ def mk_page(title, body, head_extra="", default_theme="github-dark", prefix=""):
     )
 
 def file_card(f, href):
+    dname = os.path.dirname(f["path"])
+    fpath = f["path"]
+    ext = f["name"].rsplit(".", 1)[-1].lower() if "." in f["name"] else ""
     return (
         f'<div class="file-card" data-cat="{classify(f)}">'
         f'<span class="file-icon">{icon_for(f)}</span>'
         f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{f["name"]}</a>'
-        f'<br><span class="file-path">{f["path"]}</span></span>'
+        f'<br><span class="file-path">{fpath}</span></span>'
+        f'<span class="file-actions">'
+        f'<button class="btn-tiny" title="排除此目录" onclick="quickExcludeDir(&quot;{dname}&quot;)">📁⊘</button>'
+        + (f'<button class="btn-tiny" title="排除 .{ext}" onclick="quickExcludeExt(&quot;.{ext}&quot;)">📎⊘</button>' if ext else '') +
+        f'</span>'
         f'<span class="file-date">{time_ago(f["mtime"])}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span></div>'
     )
