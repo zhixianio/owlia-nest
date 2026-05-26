@@ -95,18 +95,55 @@ for name in ICON_NAMES:
     if data:
         ICONS[name] = ("image/png", data)
 
-SW_JS = """
-const C = 'owlia-nest-v1';
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(C).then(c => c.addAll(['/'])));
-});
-self.addEventListener('fetch', e => {
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
-    if (resp.ok) { const clone = resp.clone();
-      caches.open(C).then(c => c.put(e.request, clone)); }
-    return resp;
-  })));
-});
+def _sw_js(prefix=""):
+    return f"""const CACHE = 'owlia-nest-v2-{prefix}';
+const ICON_RE = /\\/(icons|favicon)\\.(png|ico)/;
+
+self.addEventListener('install', e => {{
+  self.skipWaiting();
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.addAll([
+      '{prefix}/',
+      '{prefix}/icons/logo.png',
+      '{prefix}/icons/icon-192.png',
+      '{prefix}/icons/icon-512.png',
+    ]).catch(() => {{}}))
+  );
+}});
+
+self.addEventListener('activate', e => {{
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+    ))
+  );
+  clients.claim();
+}});
+
+self.addEventListener('fetch', e => {{
+  const url = new URL(e.request.url);
+  // Cache-first for icons
+  if (ICON_RE.test(url.pathname)) {{
+    e.respondWith(
+      caches.match(e.request).then(r => r || fetch(e.request).then(resp => {{
+        if (resp.ok) {{ caches.open(CACHE).then(c => c.put(e.request, resp.clone())); }}
+        return resp;
+      }}))
+    );
+    return;
+  }}
+  // Network-first for content
+  e.respondWith(
+    fetch(e.request).then(resp => {{
+      if (resp.ok) {{ caches.open(CACHE).then(c => c.put(e.request, resp.clone())); }}
+      return resp;
+    }}).catch(() => caches.match(e.request))
+  );
+}});
+
+self.addEventListener('message', e => {{
+  if (e.data === 'skip-waiting') self.skipWaiting();
+}});
 """
 
 BASE_CSS = """\
@@ -232,6 +269,39 @@ PAGE_TPL = """\
   /* Settings */
   loadDirs();
 }})();
+var _swReg = null;
+if ('serviceWorker' in navigator) {{
+  navigator.serviceWorker.register('{api_base}/sw.js').then(function(reg){{
+    _swReg = reg;
+    reg.onupdatefound = function(){{
+      var newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.onstatechange = function(){{
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {{
+          showUpdateToast();
+        }}
+      }};
+    }};
+    // Check for updates periodically
+    setInterval(function(){{ reg.update(); }}, 60*1000);
+  }});
+  // Also detect update from controllerchange
+  var refreshing = false;
+  navigator.serviceWorker.oncontrollerchange = function(){{
+    if (!refreshing) {{ refreshing = true; location.reload(); }}
+  }};
+}}
+function showUpdateToast(){{
+  var t = document.createElement('div');
+  t.id = 'updateToast';
+  t.style.cssText = 'position:fixed;bottom:1rem;right:1rem;background:var(--accent);color:#fff;padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9999;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+  t.textContent = '🔄 新版本可用，点击更新';
+  t.onclick = function(){{
+    if (_swReg && _swReg.waiting) {{ _swReg.waiting.postMessage('skip-waiting'); }}
+    t.textContent = '更新中…';
+  }};
+  document.body.appendChild(t);
+}}
 </script>
 <script>
 function toggleSettings(){{
@@ -587,7 +657,7 @@ def create_app(targets=None, prefix=""):
             targets, exclude_dirs, exclude_exts = _state
 
             if path == "/sw.js":
-                self._send(SW_JS, "application/javascript; charset=utf-8")
+                self._send(_sw_js(prefix), "application/javascript; charset=utf-8")
             elif path.startswith("/icons/") and path[7:] in ICONS:
                 mime, data = ICONS[path[7:]]
                 self._send(data, mime)
