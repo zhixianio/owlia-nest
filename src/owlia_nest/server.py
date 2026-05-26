@@ -698,8 +698,8 @@ def file_card(f, href):
         f'<span class="file-date">{time_ago(f["mtime"])}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
         f'<span class="file-actions">'
-        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="排除此目录">📁⊘</button>'
-        + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="排除 .{ext}">📎⊘</button>' if ext else '') +
+        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="排除此目录">排除目录</button>'
+        + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="排除 .{ext}">排除类型</button>' if ext else '') +
         f'</span></div>'
     )
 
