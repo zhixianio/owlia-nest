@@ -1430,13 +1430,9 @@ def create_app(targets=None, prefix=""):
                     except UnicodeEncodeError:
                         fn_enc = quote(fpath.name, safe='')
                         cd_fn = f'filename*=UTF-8\'\'{fn_enc}'
+                    # Use specific MIME for binary files; text files use octet-stream
+                    # to avoid Caddy/proxy interfering with text/* responses
                     mime_map = {
-                        ".md": "text/markdown; charset=utf-8",
-                        ".txt": "text/plain; charset=utf-8",
-                        ".py": "text/x-python; charset=utf-8",
-                        ".json": "application/json; charset=utf-8",
-                        ".yaml": "text/yaml; charset=utf-8", ".yml": "text/yaml; charset=utf-8",
-                        ".toml": "application/toml; charset=utf-8",
                         ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                         ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
                         ".mp3": "audio/mpeg", ".wav": "audio/wav",
