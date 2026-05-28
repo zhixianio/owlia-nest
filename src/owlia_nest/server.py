@@ -19,7 +19,7 @@ MD_EXTENSIONS = [
     fenced_code.FencedCodeExtension(),
     codehilite.CodeHiliteExtension(guess_lang=False, css_class="highlight"),
     tables.TableExtension(),
-    toc.TocExtension(permalink=True),
+    toc.TocExtension(permalink=False),
 ]
 
 # ── Performance / caching ─────────────────────────────────────────
@@ -370,9 +370,8 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
 .breadcrumb a { color: var(--accent); text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
-.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; display: flex; align-items: baseline; gap: 0.5rem; }
-.browse-item .file-name { flex: 1; }
-.btn-dl { color: var(--muted); text-decoration: none; font-size: 0.8rem; padding: 0 0.2rem; flex-shrink: 0; }
+.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; }
+.btn-dl { color: var(--muted); text-decoration: none; font-size: 0.85rem; padding: 0 0.2rem; flex-shrink: 0; }
 .btn-dl:hover { color: var(--accent); }
 .browse-item:hover { background: var(--card-bg); }
 .browse-item a { color: var(--fg); text-decoration: none; }
@@ -759,8 +758,7 @@ function renderBrowse(data){{
   for(var k=0;k<fs.length;k++){{ 
     var f=fs[k];
     var href = '{api_base}/view?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
-    var dl = '{api_base}/download?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
-    h += '<div class="browse-item">📄 <a href="'+href+'" class="file-name">'+escapeHtml(f.name)+'</a> <a href="'+dl+'" class="btn-dl" title="'+_('下载')+'">⬇</a></div>';
+    h += '<div class="browse-item">📄 <a href="'+href+'">'+escapeHtml(f.name)+'</a></div>';
   }}
   listEl.innerHTML = h || '<p style="color:var(--muted)">'+_('暂无内容')+'</p>';
   doSearch();
@@ -782,8 +780,6 @@ function doSearch(){{
 }}
 // Delegated click handler for exclude buttons
 document.addEventListener('click',function(e){{
-  // Download button — let browser handle it (no preventDefault)
-  if(e.target.closest('.btn-dl')) return;
   // Browse root handler — go back to monitored dirs list
   var r = e.target.closest('[data-browse-root]');
   if(r){{ e.preventDefault(); renderBrowseRoot(_browseState.dirs); return; }}
@@ -1145,13 +1141,16 @@ def render_md(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _strip_html(raw)
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
+    from urllib.parse import quote
+    safe_url = quote(path.name)
+    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
 <div class="markdown-body">{html}</div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
     return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
@@ -1159,13 +1158,16 @@ def render_md(path, prefix="", lang="zh"):
 def render_txt(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = escape(raw)
+    from urllib.parse import quote
+    safe_url = quote(path.name)
+    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
 <pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
     return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
