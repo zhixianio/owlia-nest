@@ -4,10 +4,13 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from html import escape
 
 import markdown
 from markdown.extensions import codehilite, fenced_code, tables, toc
@@ -18,6 +21,18 @@ MD_EXTENSIONS = [
     tables.TableExtension(),
     toc.TocExtension(permalink=True),
 ]
+
+# ── Performance / caching ─────────────────────────────────────────
+MAX_SCAN_DEPTH = 2
+# Shared cache for scanned files (populated by background scanner).
+FILE_CACHE = {}
+
+# ── Security ──────────────────────────────────────────────────────
+def _strip_html(raw: str) -> str:
+    # Remove script/style blocks to avoid executing arbitrary JS/CSS when rendering markdown.
+    raw = re.sub(r"(?is)<script[^>]*>.*?</script>", "", raw)
+    raw = re.sub(r"(?is)<style[^>]*>.*?</style>", "", raw)
+    return raw
 
 # ── I18n ──────────────────────────────────────────────────────────
 # Translation dictionary: Chinese key → {"zh": ..., "en": ...}
@@ -38,7 +53,7 @@ T = {
     "管理目录": {"zh": "管理目录", "en": "Settings"},
 
     # Settings Panel
-    "📂 监控目录":                  {"zh": "📂 监控目录",                  "en": "📂 Monitored Dirs"},
+    "监控目录":                    {"zh": "监控目录",                    "en": "Monitored Dirs"},
     "输入目录路径，如 ~/my-project": {"zh": "输入目录路径，如 ~/my-project", "en": "Enter path, e.g. ~/my-project"},
     "+ 添加":                       {"zh": "+ 添加",                       "en": "+ Add"},
     "🚫 排除子目录":                 {"zh": "🚫 排除子目录",                 "en": "🚫 Exclude Subdirs"},
@@ -354,6 +369,10 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
 .breadcrumb a { color: var(--accent); text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
+.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; }
+.browse-item:hover { background: var(--card-bg); }
+.browse-item a { color: var(--fg); text-decoration: none; }
+.browse-item a:hover { color: var(--accent); }
 .file-card { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--border); border-radius: 6px; transition: background 0.15s; }
 .file-card:hover { background: var(--card-bg); }
 .file-icon { font-size: 1.1rem; flex-shrink: 0; width: 1.5rem; text-align: center; }
@@ -484,6 +503,8 @@ function toggleLang(){{
       document.querySelectorAll('.tab-panel').forEach(function(p){{p.style.display='none'}});
       var el=document.querySelector('[data-panel="'+key+'"]');
       if(el)el.style.display='';
+      if(key==='browse') initBrowse();
+      doSearch();
     }}
   }});
   /* Settings */
@@ -532,7 +553,7 @@ function upgradeNow(){{
   var status = document.getElementById('upgradeStatus');
   var status2 = document.getElementById('upgradeStatus2');
   if (btn) {{ btn.disabled = true; btn.textContent = _('⏳ 升级中…'); }}
-  api('POST','{api_base}/api/upgrade').then(function(r){{
+  api('POST','{api_base}/api/upgrade',{{token:'owlia-upgrade-2026'}}).then(function(r){{
     if (r.ok) {{
       if (status) {{ status.textContent = _('✅ 升级完成，等待服务重启…'); status.style.color = '#22c55e'; }}
       if (status2) {{ status2.textContent = _('✅ 升级完成，等待服务重启…'); status2.style.color = '#22c55e'; }}
@@ -673,8 +694,95 @@ function toast(msg){{
   e.textContent=msg; document.body.appendChild(e);
   setTimeout(function(){{ e.style.opacity='0'; setTimeout(function(){{if(e.parentNode)e.remove()}},300); }},2500);
 }}
+var _browseState = {{ path: null, inited: false, dirs: [] }};
+function initBrowse(){{
+  if(_browseState.inited) return;
+  _browseState.inited = true;
+  api('GET','{api_base}/api/dirs').then(function(info){{
+    var dirs = (info && info.dirs) ? info.dirs : [];
+    if(dirs.length===0) return;
+    _browseState.dirs = dirs;
+    renderBrowseRoot(dirs);
+  }}).catch(function(){{}});
+}}
+function renderBrowseRoot(dirs){{
+  var bcEl = document.getElementById('browseBreadcrumbs');
+  var listEl = document.getElementById('browseList');
+  if(!bcEl || !listEl) return;
+  bcEl.innerHTML = '<span style="color:var(--muted)">📂 '+_('监控目录')+'</span>';
+  var h = '';
+  for(var j=0;j<dirs.length;j++){{
+    var d=dirs[j];
+    h += '<div class="browse-item" data-browse-path="'+escapeHtml(d)+'">📁 '+escapeHtml(d)+'</div>';
+  }}
+  listEl.innerHTML = h;
+  doSearch();
+}}
+function loadBrowse(p){{
+  if(!p) return;
+  _browseState.path = p;
+  var url = '{api_base}/api/browse?path=' + encodeURIComponent(p);
+  fetch(url).then(function(r){{ return r.json(); }}).then(function(data){{
+    renderBrowse(data);
+  }}).catch(function(e){{
+    var el = document.getElementById('browseList');
+    if(el) el.innerHTML = '<p style="color:var(--muted)">'+escapeHtml(String(e))+'</p>';
+  }});
+}}
+function renderBrowse(data){{
+  var bcEl = document.getElementById('browseBreadcrumbs');
+  var listEl = document.getElementById('browseList');
+  if(!bcEl || !listEl) return;
+  if(!data || !data.ok){{
+    bcEl.innerHTML = '';
+    listEl.innerHTML = '<p style="color:var(--muted)">'+escapeHtml((data&&data.error)||'Failed')+'</p>';
+    return;
+  }}
+  var bcs = data.breadcrumbs || [];
+  var bcHtml = '<a href="#" class="browse-item" data-browse-root="1">📂 '+_('监控目录')+'</a>';
+  for(var i=0;i<bcs.length;i++){{ 
+    var c=bcs[i];
+    bcHtml += ' / <a href="#" class="browse-item" data-browse-path="'+escapeHtml(c.path)+'">'+escapeHtml(c.name)+'</a>';
+  }}
+  bcEl.innerHTML = bcHtml;
+  var ds = data.dirs || [];
+  var fs = data.files || [];
+  var h = '';
+  for(var j=0;j<ds.length;j++){{ 
+    var d=ds[j];
+    h += '<div class="browse-item" data-browse-path="'+escapeHtml(d.path)+'">📁 '+escapeHtml(d.name)+'</div>';
+  }}
+  for(var k=0;k<fs.length;k++){{ 
+    var f=fs[k];
+    var href = '{api_base}/view?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
+    h += '<div class="browse-item">📄 <a href="'+href+'">'+escapeHtml(f.name)+'</a></div>';
+  }}
+  listEl.innerHTML = h || '<p style="color:var(--muted)">'+_('暂无内容')+'</p>';
+  doSearch();
+}}
+function doSearch(){{
+  var inp = document.getElementById('searchInput');
+  var q = (inp && inp.value) ? inp.value.trim().toLowerCase() : '';
+  var activeBtn = document.querySelector('.tabs-bar button.tab-active');
+  var key = activeBtn ? activeBtn.getAttribute('data-tab') : 'recent';
+  var panel = document.querySelector('[data-panel=\"'+key+'\"]');
+  if(!panel) return;
+  var items = panel.querySelectorAll('.file-card, .browse-item');
+  for(var i=0;i<items.length;i++){{ 
+    var it=items[i];
+    if(!q){{ it.style.display=''; continue; }}
+    var t = (it.textContent||'').toLowerCase();
+    it.style.display = (t.indexOf(q) >= 0) ? '' : 'none';
+  }}
+}}
 // Delegated click handler for exclude buttons
 document.addEventListener('click',function(e){{
+  // Browse root handler — go back to monitored dirs list
+  var r = e.target.closest('[data-browse-root]');
+  if(r){{ e.preventDefault(); renderBrowseRoot(_browseState.dirs); return; }}
+  // Browse path handler — check FIRST, before .btn-tiny
+  var b = e.target.closest('[data-browse-path]');
+  if(b){{ e.preventDefault(); loadBrowse(b.getAttribute('data-browse-path')); return; }}
   var btn = e.target.closest('.btn-tiny');
   if(!btn) return;
   var d = btn.getAttribute('data-exclude-dir');
@@ -697,6 +805,7 @@ function removeExcludeExt(e){{
 CATEGORIES = {
     "recent": ("🕐", "最近更新"), "doc": ("📄", "文档"),
     "code": ("💻", "代码"), "config": ("⚙️", "配置"), "media": ("🎬", "媒体"),
+    "browse": ("📁", "浏览"),
 }
 _FILE_ICON = {
     "md": "📄", "txt": "📝",
@@ -763,6 +872,39 @@ def scan_file(path, root):
         "rel_path": str(path.relative_to(root)), "root": str(root),
     }
 
+def _iter_files_scandir(root: Path, max_depth: int, skip_parts, skip_paths, exclude_ext_set, valid_ext):
+    stack = [(root, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        try:
+            with os.scandir(cur) as it:
+                for entry in it:
+                    name = entry.name
+                    if name.startswith("."):
+                        continue
+                    try:
+                        p = Path(entry.path)
+                    except Exception:
+                        continue
+                    if skip_parts and (skip_parts & set(p.parts)):
+                        continue
+                    if skip_paths and any(skip_path in p.parents for skip_path in skip_paths):
+                        continue
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            if depth < max_depth:
+                                stack.append((p, depth + 1))
+                        elif entry.is_file(follow_symlinks=False):
+                            ext = p.suffix.lower()
+                            if ext in exclude_ext_set:
+                                continue
+                            if ext in valid_ext:
+                                yield p
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+
 def scan_files(targets, exclude_dirs=None, exclude_exts=None):
     files = []
     skip_parts = {"__pycache__", "node_modules", ".git"}
@@ -786,20 +928,48 @@ def scan_files(targets, exclude_dirs=None, exclude_exts=None):
             info["rel_path"] = target.name
             files.append(info)
         elif target.is_dir():
-            for fpath in sorted(target.rglob("*")):
-                if fpath.is_file() and not fpath.name.startswith("."):
-                    if skip_parts & set(fpath.parts):
-                        continue
-                    # Check if file is inside an excluded full path
-                    if any(skip_path in fpath.parents for skip_path in skip_paths):
-                        continue
-                    ext = fpath.suffix.lower()
-                    if ext in exclude_ext_set:
-                        continue
-                    if ext in valid_ext:
-                        files.append(scan_file(fpath, target))
+            for fpath in _iter_files_scandir(
+                target,
+                MAX_SCAN_DEPTH,
+                skip_parts,
+                skip_paths,
+                exclude_ext_set,
+                valid_ext,
+            ):
+                try:
+                    files.append(scan_file(fpath, target))
+                except OSError:
+                    continue
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return files
+
+def browse_dir(path: Path, cap: int = 5000):
+    dirs = []
+    files = []
+    count = 0
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                if count >= cap:
+                    break
+                name = entry.name
+                if name.startswith("."):
+                    continue
+                p = Path(entry.path)
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        dirs.append({"name": name, "path": str(p)})
+                    elif entry.is_file(follow_symlinks=False):
+                        st = entry.stat(follow_symlinks=False)
+                        files.append({"name": name, "path": str(p), "mtime": st.st_mtime, "size": st.st_size})
+                    count += 1
+                except OSError:
+                    continue
+    except OSError:
+        return {"ok": False, "error": "not readable", "dirs": [], "files": [], "truncated": False}
+    dirs.sort(key=lambda d: d["name"].lower())
+    files.sort(key=lambda f: f["name"].lower())
+    return {"ok": True, "dirs": dirs, "files": files, "truncated": count >= cap}
 
 # ── Utilities ─────────────────────────────────────────────────────
 def size_fmt(n):
@@ -838,6 +1008,17 @@ def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", 
     theme_css = THEMES[default_theme]["css"].strip()
     theme_json = json.dumps({k: theme_dict(k) for k in THEMES})
     theme_js = f"var THEMES = {theme_json};"
+    # Inject helpers via head_extra (do NOT put these inside PAGE_TPL).
+    head_extra = (
+        "<script>"
+        "function escapeHtml(s){"
+        "s=(s===null||s===undefined)?'':String(s);"
+        "return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+        ".replace(/\\\"/g,'&quot;').replace(/'/g,'&#39;');"
+        "}"
+        "</script>"
+        + (head_extra or "")
+    )
     return PAGE_TPL.format(
         title=title, body=body, head_extra=head_extra,
         __theme_css__=theme_css, __theme_js__=theme_js,
@@ -851,15 +1032,17 @@ def file_card(f, href, lang="zh"):
     dname = os.path.dirname(f["path"])
     fpath = f["path"]
     ext = f["name"].rsplit(".", 1)[-1].lower() if "." in f["name"] else ""
+    safe_name = escape(f["name"])
+    safe_fpath = escape(fpath)
     return (
         f'<div class="file-card" data-cat="{classify(f)}">'
         f'<span class="file-icon">{icon_for(f)}</span>'
-        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{f["name"]}</a>'
-        f'<br><span class="file-path">{fpath}</span></span>'
+        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{safe_name}</a>'
+        f'<br><span class="file-path">{safe_fpath}</span></span>'
         f'<span class="file-date">{time_ago(f["mtime"], lang)}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
         f'<span class="file-actions">'
-        f'<button class="btn-tiny" data-exclude-dir="{dname}" title="{_("排除此目录", lang)}">{_("排除此目录", lang)}</button>'
+        f'<button class="btn-tiny" data-exclude-dir="{escape(dname)}" title="{_("排除此目录", lang)}">{_("排除此目录", lang)}</button>'
         + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="{_("排除类型", lang)} .{ext}">{_("排除类型", lang)}</button>' if ext else '') +
         f'</span></div>'
     )
@@ -884,7 +1067,14 @@ def render_home(files, prefix="", lang="zh"):
     secs = []
     for key, cards in cats.items():
         hidden = '' if key == "recent" else ' style="display:none"'
-        if cards:
+        if key == "browse":
+            secs.append(
+                f'<section class="tab-panel" data-panel="{key}"{hidden}>'
+                f'<div id="browseBreadcrumbs" class="breadcrumb" style="margin-bottom:0.75rem"></div>'
+                f'<div id="browseList"></div>'
+                f'</section>'
+            )
+        elif cards:
             secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}>{"".join(cards)}</section>')
         else:
             secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">{_("暂无内容", lang)}</p></section>')
@@ -916,8 +1106,11 @@ def render_home(files, prefix="", lang="zh"):
   </div>
 </header>
 {upgrade_banner}
+<div class="search-row" style="margin:0.75rem 0 1rem">
+  <input id="searchInput" type="search" placeholder="Search..." oninput="doSearch()" style="width:100%;padding:0.6rem 0.75rem;border-radius:10px;border:1px solid var(--border);background:var(--card-bg);color:var(--fg);outline:none">
+</div>
 <div id="settingsPanel" class="settings-panel" style="display:none">
-  <div class="settings-title">{_("📂 监控目录", lang)}</div>
+  <div class="settings-title">📂 {_("监控目录", lang)}</div>
   <div id="dirList" class="dir-list">{_("加载中…", lang)}</div>
   <div class="add-dir-row">
     <input id="dirInput" type="text" class="dir-input" placeholder="{_("输入目录路径，如 ~/my-project", lang)}">
@@ -943,39 +1136,44 @@ def render_home(files, prefix="", lang="zh"):
 
 def render_md(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = _strip_html(raw)
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    safe_name = escape(path.name)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
 <div class="markdown-body">{html}</div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 def render_txt(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = escape(raw)
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
+    safe_name = escape(path.name)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
 <pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
     ext = path.suffix.lower()
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     media_url = f"{prefix}/media?f={path.name}&r={path.parent}"
+    safe_name = escape(path.name)
 
     _audio_mime = {".mp3": "mpeg", ".wav": "wav", ".ogg": "ogg", ".m4a": "mp4", ".opus": "opus"}
 
     if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
-        elem = f'<img src="{media_url}" alt="{path.name}" style="max-width:100%;height:auto;border-radius:6px;display:block">'
+        elem = f'<img src="{media_url}" alt="{safe_name}" style="max-width:100%;height:auto;border-radius:6px;display:block">'
     elif ext in _audio_mime:
         elem = f'<audio controls preload="auto" style="width:100%;max-width:480px"><source src="{media_url}" type="audio/{_audio_mime[ext]}"></audio>'
     else:
@@ -985,15 +1183,22 @@ def render_media(path, prefix="", lang="zh"):
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {path.name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
 <div style="margin:1rem 0">{elem}</div>
-<div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{path.name} · {size_fmt(path.stat().st_size)}</div>
+<div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{safe_name} · {size_fmt(path.stat().st_size)}</div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{path.name} — Owlia Nest", body, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 # ── WSGI/HTTP handler ────────────────────────────────────────────
 def create_app(targets=None, prefix=""):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    def _path_is_within(path: Path, parent: Path) -> bool:
+        try:
+            path.resolve().relative_to(parent.resolve())
+            return True
+        except Exception:
+            return False
 
     if targets is None:
         targets, exclude_dirs, exclude_exts = load_config()
@@ -1007,6 +1212,56 @@ def create_app(targets=None, prefix=""):
     _state = [targets, exclude_dirs, exclude_exts]
     config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     prefix = prefix.rstrip("/")
+
+    _cache = FILE_CACHE
+    if "files" not in _cache:
+        _cache["files"] = []
+    if "scanning" not in _cache:
+        _cache["scanning"] = False
+    if "last_scan" not in _cache:
+        _cache["last_scan"] = 0.0
+    if "error" not in _cache:
+        _cache["error"] = None
+
+    _cache_lock = threading.Lock()
+    _state_lock = threading.Lock()
+
+    def _start_scan_async(force=False):
+        with _cache_lock:
+            if _cache.get("scanning") and not force:
+                return
+            _cache["scanning"] = True
+            _cache["error"] = None
+
+        def _worker():
+            try:
+                with _state_lock:
+                    _t, _e, _x = _state[0], _state[1], _state[2]
+                    _t = list(_t)
+                    _e = list(_e)
+                    _x = list(_x)
+                files = scan_files(_t, _e, _x)
+                with _cache_lock:
+                    _cache["files"] = files
+                    _cache["last_scan"] = time.time()
+                    _cache["error"] = None
+            except Exception as e:
+                with _cache_lock:
+                    _cache["error"] = str(e)
+            finally:
+                with _cache_lock:
+                    _cache["scanning"] = False
+
+        th = threading.Thread(target=_worker, name="owlia-nest-scan", daemon=True)
+        th.start()
+
+    def _check_post_origin(headers) -> bool:
+        origin = (headers.get("Origin") or "").strip()
+        if not origin:
+            return False
+        allow = ("http://localhost", "http://127.0.0.1", "http://0.0.0.0",
+                 "https://localhost", "https://127.0.0.1", "https://0.0.0.0")
+        return origin.startswith(allow)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -1041,17 +1296,69 @@ def create_app(targets=None, prefix=""):
             elif path == "/api/version":
                 info = _check_remote_version()
                 self._send(json.dumps(info), "application/json; charset=utf-8")
+            elif path == "/api/cache-status":
+                with _cache_lock:
+                    payload = {
+                        "scanning": bool(_cache.get("scanning")),
+                        "last_scan": _cache.get("last_scan") or 0,
+                        "count": len(_cache.get("files") or []),
+                        "error": _cache.get("error"),
+                    }
+                self._send(json.dumps(payload), "application/json; charset=utf-8")
+            elif path == "/api/browse":
+                p = q.get("path", [None])[0]
+                if not p:
+                    self._send(json.dumps({"ok": False, "error": "missing path"}), "application/json; charset=utf-8"); return
+                dpath = Path(p).expanduser().resolve()
+                # Must be within a monitored target
+                if not any(_path_is_within(dpath, t) for t in targets):
+                    self.send_error(403, "Forbidden"); return
+                if not dpath.exists() or not dpath.is_dir():
+                    self._send(json.dumps({"ok": False, "error": "not a dir"}), "application/json; charset=utf-8"); return
+                payload = browse_dir(dpath, cap=5000)
+                # Breadcrumbs: relative parts from monitored root
+                root = None
+                for t in targets:
+                    if _path_is_within(dpath, t):
+                        root = t
+                        break
+                crumbs = []
+                if root is not None:
+                    rel = dpath.relative_to(root)
+                    cur = root
+                    crumbs.append({"name": root.name or str(root), "path": str(root)})
+                    for part in rel.parts:
+                        cur = cur / part
+                        crumbs.append({"name": part, "path": str(cur)})
+                payload["breadcrumbs"] = crumbs
+                payload["path"] = str(dpath)
+                self._send(json.dumps(payload), "application/json; charset=utf-8")
             elif path == "/":
                 # Reload config from disk to avoid stale state
                 _tm, _em, _xm = load_config(config_path)
-                files = scan_files(_tm, _em, _xm)
+                with _state_lock:
+                    _state[0], _state[1], _state[2] = _tm, _em, _xm
+                with _cache_lock:
+                    have_cache = bool(_cache.get("files"))
+                    scanning = bool(_cache.get("scanning"))
+                if (not have_cache) and (not scanning):
+                    _start_scan_async()
+                with _cache_lock:
+                    files = list(_cache.get("files") or [])
                 self._html(render_home(files, prefix, lang))
             elif path == "/view":
                 f_rel = q.get("f", [None])[0]
                 f_root = q.get("r", [None])[0]
                 if not f_rel or not f_root:
                     self.send_error(404); return
-                fpath = Path(f_root) / f_rel
+                f_root_p = Path(f_root).expanduser().resolve()
+                fpath = (f_root_p / f_rel).resolve()
+                if not any(_path_is_within(f_root_p, t) for t in targets):
+                    self.send_error(403, "Forbidden"); return
+                try:
+                    fpath.relative_to(f_root_p)
+                except Exception:
+                    self.send_error(403, "Forbidden"); return
                 if fpath.exists() and fpath.is_file():
                     ext = fpath.suffix.lower()
                     if ext == ".md":
@@ -1068,7 +1375,14 @@ def create_app(targets=None, prefix=""):
                 f_root = q.get("r", [None])[0]
                 if not f_rel or not f_root:
                     self.send_error(404); return
-                fpath = Path(f_root) / f_rel
+                f_root_p = Path(f_root).expanduser().resolve()
+                fpath = (f_root_p / f_rel).resolve()
+                if not any(_path_is_within(f_root_p, t) for t in targets):
+                    self.send_error(403, "Forbidden"); return
+                try:
+                    fpath.relative_to(f_root_p)
+                except Exception:
+                    self.send_error(403, "Forbidden"); return
                 if fpath.exists() and fpath.is_file():
                     ext = fpath.suffix.lower()
                     mime_map = {
@@ -1090,7 +1404,11 @@ def create_app(targets=None, prefix=""):
             path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
             if not path.startswith("/"):
                 path = "/" + path
+            if not _check_post_origin(self.headers):
+                self.send_error(403, "Bad Origin"); return
             length = int(self.headers.get("Content-Length", 0))
+            if length > 1024 * 1024:
+                self.send_error(413, "Payload Too Large"); return
             body = self.rfile.read(length).decode("utf-8", errors="replace")
             try:
                 data = json.loads(body) if body else {}
@@ -1106,7 +1424,10 @@ def create_app(targets=None, prefix=""):
                 _state[2] = _disk_x
                 targets, exclude_dirs, exclude_exts = _disk_t, _disk_e, _disk_x
 
-            if path == "/api/add-dir":
+            if path == "/api/refresh":
+                _start_scan_async(force=True)
+                self._send(json.dumps({"ok": True}), "application/json")
+            elif path == "/api/add-dir":
                 d = data.get("dir", "").strip()
                 if not d:
                     self._send(json.dumps({"ok": False, "error": "missing dir"}), "application/json"); return
@@ -1174,6 +1495,8 @@ def create_app(targets=None, prefix=""):
                 _state[2] = new_exclude_exts
                 self._send(json.dumps({"ok": True, "count": len(new_targets)}), "application/json")
             elif path == "/api/upgrade":
+                if data.get("token") != "owlia-upgrade-2026":
+                    self.send_error(403, "Forbidden"); return
                 try:
                     result = subprocess.run(
                         [sys.executable, "-m", "pip", "install", "--upgrade",

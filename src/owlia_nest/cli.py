@@ -59,7 +59,7 @@ def cmd_add(args):
         dirs = []
     else:
         data = load_config()
-        dirs = data
+        dirs = data[0]
     # load_config returns resolved Paths; check via string equality
     dir_strs = [str(d) for d in dirs]
     if str(target) in dir_strs:
