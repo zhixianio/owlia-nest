@@ -61,6 +61,7 @@ T = {
     "+ 排除":                       {"zh": "+ 排除",                       "en": "+ Exclude"},
     "🚫 排除文件类型":               {"zh": "🚫 排除文件类型",               "en": "🚫 Exclude Extensions"},
     "扩展名，如 .json":              {"zh": "扩展名，如 .json",              "en": "Extension, e.g. .json"},
+    "下载":                        {"zh": "下载",                        "en": "Download"},
 
     # Navigation
     "← Home":     {"zh": "← Home",     "en": "← Home"},
@@ -369,7 +370,10 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
 .breadcrumb a { color: var(--accent); text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
-.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; }
+.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; display: flex; align-items: baseline; gap: 0.5rem; }
+.browse-item .file-name { flex: 1; }
+.btn-dl { color: var(--muted); text-decoration: none; font-size: 0.8rem; padding: 0 0.2rem; flex-shrink: 0; }
+.btn-dl:hover { color: var(--accent); }
 .browse-item:hover { background: var(--card-bg); }
 .browse-item a { color: var(--fg); text-decoration: none; }
 .browse-item a:hover { color: var(--accent); }
@@ -755,7 +759,8 @@ function renderBrowse(data){{
   for(var k=0;k<fs.length;k++){{ 
     var f=fs[k];
     var href = '{api_base}/view?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
-    h += '<div class="browse-item">📄 <a href="'+href+'">'+escapeHtml(f.name)+'</a></div>';
+    var dl = '{api_base}/download?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
+    h += '<div class="browse-item">📄 <a href="'+href+'" class="file-name">'+escapeHtml(f.name)+'</a> <a href="'+dl+'" class="btn-dl" title="'+_('下载')+'">⬇</a></div>';
   }}
   listEl.innerHTML = h || '<p style="color:var(--muted)">'+_('暂无内容')+'</p>';
   doSearch();
@@ -777,6 +782,8 @@ function doSearch(){{
 }}
 // Delegated click handler for exclude buttons
 document.addEventListener('click',function(e){{
+  // Download button — let browser handle it (no preventDefault)
+  if(e.target.closest('.btn-dl')) return;
   // Browse root handler — go back to monitored dirs list
   var r = e.target.closest('[data-browse-root]');
   if(r){{ e.preventDefault(); renderBrowseRoot(_browseState.dirs); return; }}
@@ -1393,6 +1400,31 @@ def create_app(targets=None, prefix=""):
                     }
                     mime = mime_map.get(ext, "application/octet-stream")
                     self._send(fpath.read_bytes(), mime)
+                else:
+                    self.send_error(404, "File not found")
+            elif path == "/download":
+                f_rel = q.get("f", [None])[0]
+                f_root = q.get("r", [None])[0]
+                if not f_rel or not f_root:
+                    self.send_error(404); return
+                f_root_p = Path(f_root).expanduser().resolve()
+                fpath = (f_root_p / f_rel).resolve()
+                if not any(_path_is_within(f_root_p, t) for t in targets):
+                    self.send_error(403, "Forbidden"); return
+                try:
+                    fpath.relative_to(f_root_p)
+                except Exception:
+                    self.send_error(403, "Forbidden"); return
+                if fpath.exists() and fpath.is_file():
+                    from urllib.parse import quote
+                    safe_name = quote(fpath.name)
+                    body = fpath.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+                    self.send_header("Content-Length", len(body))
+                    self.end_headers()
+                    self.wfile.write(body)
                 else:
                     self.send_error(404, "File not found")
             else:
