@@ -1175,6 +1175,9 @@ def render_txt(path, prefix="", lang="zh"):
 def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
     ext = path.suffix.lower()
+    from urllib.parse import quote
+    safe_url = quote(path.name)
+    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     media_url = f"{prefix}/media?f={path.name}&r={path.parent}"
     safe_name = escape(path.name)
@@ -1192,7 +1195,7 @@ def render_media(path, prefix="", lang="zh"):
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
 <div style="margin:1rem 0">{elem}</div>
 <div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{safe_name} · {size_fmt(path.stat().st_size)}</div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
@@ -1419,11 +1422,31 @@ def create_app(targets=None, prefix=""):
                     self.send_error(403, "Forbidden"); return
                 if fpath.exists() and fpath.is_file():
                     from urllib.parse import quote
-                    safe_name = quote(fpath.name)
+                    ext = fpath.suffix.lower()
+                    # RFC 5987: encode non-ASCII filenames for Content-Disposition
+                    try:
+                        fpath.name.encode('latin-1')
+                        cd_fn = f'filename="{fpath.name}"'
+                    except UnicodeEncodeError:
+                        fn_enc = quote(fpath.name, safe='')
+                        cd_fn = f'filename*=UTF-8\'\'{fn_enc}'
+                    mime_map = {
+                        ".md": "text/markdown; charset=utf-8",
+                        ".txt": "text/plain; charset=utf-8",
+                        ".py": "text/x-python; charset=utf-8",
+                        ".json": "application/json; charset=utf-8",
+                        ".yaml": "text/yaml; charset=utf-8", ".yml": "text/yaml; charset=utf-8",
+                        ".toml": "application/toml; charset=utf-8",
+                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+                        ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                        ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".opus": "audio/opus",
+                    }
+                    mime = mime_map.get(ext, "application/octet-stream")
                     body = fpath.read_bytes()
                     self.send_response(200)
-                    self.send_header("Content-Type", "application/octet-stream")
-                    self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+                    self.send_header("Content-Type", mime)
+                    self.send_header("Content-Disposition", f'attachment; {cd_fn}')
                     self.send_header("Content-Length", len(body))
                     self.end_headers()
                     self.wfile.write(body)
