@@ -524,8 +524,7 @@ function toggleLang(){{
     }}
   }});
   /* Settings */
-  loadDirs();
-  loadFavorites();
+  /* loadDirs and loadFavorites moved to the init block below */
 }})();
 var _swReg = null;
 if ('serviceWorker' in navigator) {{
@@ -890,6 +889,11 @@ function removeExcludeExt(e){{
     else alert(r.error||'Failed');
   }});
 }}
+/* Init: call after all functions are defined */
+(function(){{
+  loadDirs();
+  loadFavorites();
+}})();
 </script>
 </body>
 </html>
@@ -1330,6 +1334,7 @@ var _easyMDE = null;
 var _mdRaw = null;
 var _mdFile = { f: '%s', r: '%s' };
 var _mdPrefix = '%s';
+var _saveLabel = '%s';
 function toggleEdit() {
   if (!_mdRaw) {
     try { _mdRaw = JSON.parse(document.getElementById('mdRawData').textContent); } catch(e) {}
@@ -1372,21 +1377,47 @@ function saveEdit() {
   }).then(function(r){ return r.json(); }).then(function(r) {
     if (r.ok) {
       _mdRaw = content;
-      location.reload();
+      // Update rendered view in-place by re-fetching the view page
+      var viewUrl = _mdPrefix + '/view?f=' + encodeURIComponent(_mdFile.f) + '&r=' + encodeURIComponent(_mdFile.r);
+      fetch(viewUrl).then(function(resp){ return resp.text(); }).then(function(html) {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var newView = tmp.querySelector('#mdView');
+        if (newView) {
+          document.getElementById('mdView').innerHTML = newView.innerHTML;
+        }
+        // Stay in edit mode — just update the button to show success
+        btn.textContent = '✅ ' + _saveLabel;
+        setTimeout(function() { btn.textContent = '💾 ' + _saveLabel; }, 1200);
+        btn.disabled = false;
+      }).catch(function() {
+        btn.textContent = _saveLabel;
+        btn.disabled = false;
+      });
     } else {
       alert(r.error || 'Save failed');
+      btn.textContent = _saveLabel;
       btn.disabled = false;
-      btn.textContent = '%s';
     }
   }).catch(function(e) {
     alert('Network error: ' + e);
+    btn.textContent = _saveLabel;
     btn.disabled = false;
-    btn.textContent = '%s';
   });
 }
+/* Keyboard shortcut: Ctrl+S / Cmd+S → save (stay in editor) */
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    var saveBtn = document.getElementById('btnSave');
+    if (saveBtn && saveBtn.style.display !== 'none') {
+      saveEdit();
+    }
+  }
+});
 </script>
 <script type="application/json" id="mdRawData">%s</script>
-""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, save_text, raw_json)
+""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, raw_json)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
