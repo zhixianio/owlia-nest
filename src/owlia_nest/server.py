@@ -1,5 +1,6 @@
 """OWlia Docs server — Markdown renderer with themes, PWA, categorization, i18n."""
 
+import base64
 import json
 import os
 import subprocess
@@ -62,6 +63,12 @@ T = {
     "🚫 排除文件类型":               {"zh": "🚫 排除文件类型",               "en": "🚫 Exclude Extensions"},
     "扩展名，如 .json":              {"zh": "扩展名，如 .json",              "en": "Extension, e.g. .json"},
     "下载":                        {"zh": "下载",                        "en": "Download"},
+    "编辑":                        {"zh": "编辑",                        "en": "Edit"},
+    "保存":                        {"zh": "保存",                        "en": "Save"},
+    "取消":                        {"zh": "取消",                        "en": "Cancel"},
+    "收藏":                        {"zh": "收藏",                        "en": "Bookmark"},
+    "取消收藏":                    {"zh": "取消收藏",                    "en": "Unbookmark"},
+    "已收藏":                      {"zh": "已收藏",                      "en": "Bookmarked"},
 
     # Navigation
     "← Home":     {"zh": "← Home",     "en": "← Home"},
@@ -302,7 +309,7 @@ for name in ICON_NAMES:
         ICONS[name] = ("image/png", data)
 
 def _sw_js(prefix=""):
-    return f"""const CACHE = 'owlia-nest-v2-{prefix}';
+    return f"""const CACHE = 'owlia-nest-v4-{prefix}';
 const ICON_RE = /\\/(icons|favicon)\\.(png|ico)/;
 
 self.addEventListener('install', e => {{
@@ -378,6 +385,11 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .browse-item a:hover { color: var(--accent); }
 .file-card { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--border); border-radius: 6px; transition: background 0.15s; }
 .file-card:hover { background: var(--card-bg); }
+.btn-star { background: none; border: none; cursor: pointer; font-size: 1.15rem; padding: 0 0.25rem; flex-shrink: 0; opacity: 0.7; transition: opacity 0.15s; line-height: 1; color: #d4a017; }
+.btn-star:hover { opacity: 0.8; }
+.btn-star.faved { opacity: 1; }
+.file-card:hover .btn-star { opacity: 0.75; }
+.file-card:hover .btn-star:hover { opacity: 1; }
 .file-icon { font-size: 1.1rem; flex-shrink: 0; width: 1.5rem; text-align: center; }
 .file-name { flex: 1; min-width: 0; }
 .file-name a { color: var(--accent); text-decoration: none; font-weight: 500; word-break: break-all; }
@@ -507,11 +519,13 @@ function toggleLang(){{
       var el=document.querySelector('[data-panel="'+key+'"]');
       if(el)el.style.display='';
       if(key==='browse') initBrowse();
+      if(key==='fav') renderFavTab();
       doSearch();
     }}
   }});
   /* Settings */
   loadDirs();
+  loadFavorites();
 }})();
 var _swReg = null;
 if ('serviceWorker' in navigator) {{
@@ -605,7 +619,7 @@ function toggleSettings(){{
   p.style.display=p.style.display==='none'?'block':'none';
   if(p.style.display==='block')loadDirs();
 }}
-function api(method,url,body){{ return fetch(url,{{method:method,headers:{{'Content-Type':'application/json'}},body:body?JSON.stringify(body):null}}).then(function(r){{return r.json()}}); }}
+function api(method,url,body){{ return fetch(url,{{method:method,headers:{{'Content-Type':'application/json'}},body:body?JSON.stringify(body):null}}).then(function(r){{ if(!r.ok)throw new Error(r.status); return r.json(); }}); }}
 function loadDirs(){{
   api('GET','{api_base}/api/dirs').then(function(data){{
     var dirs = Array.isArray(data) ? data : data.dirs || [];
@@ -698,6 +712,82 @@ function toast(msg){{
   setTimeout(function(){{ e.style.opacity='0'; setTimeout(function(){{if(e.parentNode)e.remove()}},300); }},2500);
 }}
 var _browseState = {{ path: null, inited: false, dirs: [] }};
+var _favorites = new Set();
+function loadFavorites(){{
+  // Load from localStorage first for instant UI
+  try{{
+    var local=localStorage.getItem('owlia-nest-favs');
+    if(local){{ _favorites=new Set(JSON.parse(local)); }}
+  }}catch(e){{}}
+  renderStars();
+  updateFavCount();
+  // Then sync from server
+  api('GET','{api_base}/api/favorites').then(function(data){{
+    if(data && data.favorites){{ _favorites=new Set(data.favorites); }}
+    renderStars();
+    updateFavCount();
+    try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
+  }}).catch(function(){{
+    setTimeout(function(){{
+      api('GET','{api_base}/api/favorites').then(function(data){{
+        if(data && data.favorites){{ _favorites=new Set(data.favorites); }}
+        renderStars();
+        updateFavCount();
+        try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
+      }});
+    }},500);
+  }});
+}}
+function toggleFav(fpath,starEl){{
+  // Optimistic UI update
+  var wasFaved = _favorites.has(fpath);
+  if(wasFaved){{
+    _favorites.delete(fpath); starEl.textContent='☆'; starEl.classList.remove('faved'); starEl.title=_('收藏');
+  }} else {{
+    _favorites.add(fpath); starEl.textContent='⏳'; starEl.classList.add('faved'); starEl.title=_('取消收藏');
+  }}
+  updateFavCount();
+  try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
+  api('POST','{api_base}/api/favorites/toggle',{{path:fpath}}).then(function(r){{
+    if(r && r.ok){{ starEl.textContent='⭐'; return; }}
+    throw new Error('api failed');
+  }}).catch(function(){{
+    if(wasFaved){{ _favorites.add(fpath); starEl.textContent='⭐'; starEl.classList.add('faved'); starEl.title=_('取消收藏'); }}
+    else{{ _favorites.delete(fpath); starEl.textContent='☆'; starEl.classList.remove('faved'); starEl.title=_('收藏'); }}
+    updateFavCount();
+    try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
+  }});
+}}
+function renderStars(){{
+  document.querySelectorAll('.btn-star').forEach(function(star){{
+    var fpath = star.dataset.filepath;
+    if(!fpath) return;
+    if(_favorites.has(fpath)){{
+      star.textContent='⭐'; star.classList.add('faved'); star.title=_('取消收藏');
+    }} else {{
+      star.textContent='☆'; star.classList.remove('faved'); star.title=_('收藏');
+    }}
+  }});
+}}
+function updateFavCount(){{
+  var btn=document.querySelector('.tabs-bar button[data-tab="fav"]');
+  if(btn){{ var cnt=btn.querySelector('.tab-count'); if(cnt) cnt.textContent=_favorites.size; }}
+}}
+function renderFavTab(){{
+  var panel=document.querySelector('[data-panel="fav"]');
+  if(!panel) return;
+  var seen=new Set();
+  var html='';
+  document.querySelectorAll('.file-card').forEach(function(card){{
+    var a=card.querySelector('.file-name a');
+    if(!a||!a.dataset.filepath) return;
+    if(!_favorites.has(a.dataset.filepath)) return;
+    if(seen.has(a.dataset.filepath)) return;
+    seen.add(a.dataset.filepath);
+    html+=card.outerHTML;
+  }});
+  panel.innerHTML=html||'<p style="color:var(--muted);padding:2rem;text-align:center">'+_('暂无内容')+'</p>';
+}}
 function initBrowse(){{
   if(_browseState.inited) return;
   _browseState.inited = true;
@@ -808,6 +898,7 @@ function removeExcludeExt(e){{
 CATEGORIES = {
     "recent": ("🕐", "最近更新"), "doc": ("📄", "文档"),
     "code": ("💻", "代码"), "config": ("⚙️", "配置"), "media": ("🎬", "媒体"),
+    "fav": ("⭐", "收藏"),
     "browse": ("📁", "浏览"),
 }
 _FILE_ICON = {
@@ -863,6 +954,35 @@ def save_config(dirs, config_path=None, exclude_dirs=None, exclude_exts=None):
     data["exclude_dirs"] = exclude_dirs if exclude_dirs is not None else existing.get("exclude_dirs", [])
     data["exclude_exts"] = exclude_exts if exclude_exts is not None else existing.get("exclude_exts", [])
     path.write_text(json.dumps(data, indent=2))
+    return path
+
+def load_favorites(config_path=None):
+    """Load favorited file paths from config."""
+    if config_path is None:
+        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    path = _expand(config_path)
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+            return set(data.get("favorites", []))
+        except Exception:
+            pass
+    return set()
+
+def save_favorites(favorites, config_path=None):
+    """Save favorited file paths to config."""
+    if config_path is None:
+        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    path = _expand(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text())
+        except Exception:
+            pass
+    existing["favorites"] = sorted(favorites)
+    path.write_text(json.dumps(existing, indent=2))
     return path
 
 def scan_file(path, root):
@@ -943,6 +1063,13 @@ def scan_files(targets, exclude_dirs=None, exclude_exts=None):
                     files.append(scan_file(fpath, target))
                 except OSError:
                     continue
+    # Deduplicate by absolute path: keep entry from most specific (closest) root
+    seen = {}
+    for f in files:
+        apath = f["path"]
+        if apath not in seen or len(f["rel_path"]) < len(seen[apath]["rel_path"]):
+            seen[apath] = f
+    files = list(seen.values())
     files.sort(key=lambda f: f["mtime"], reverse=True)
     return files
 
@@ -1040,7 +1167,8 @@ def file_card(f, href, lang="zh"):
     return (
         f'<div class="file-card" data-cat="{classify(f)}">'
         f'<span class="file-icon">{icon_for(f)}</span>'
-        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}">{safe_name}</a>'
+        f'<button class="btn-star" data-filepath="{escape(fpath)}" title="{_("收藏", lang)}" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button>'
+        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}" data-filepath="{escape(fpath)}">{safe_name}</a>'
         f'<br><span class="file-path">{safe_fpath}</span></span>'
         f'<span class="file-date">{time_ago(f["mtime"], lang)}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
@@ -1075,6 +1203,12 @@ def render_home(files, prefix="", lang="zh"):
                 f'<section class="tab-panel" data-panel="{key}"{hidden}>'
                 f'<div id="browseBreadcrumbs" class="breadcrumb" style="margin-bottom:0.75rem"></div>'
                 f'<div id="browseList"></div>'
+                f'</section>'
+            )
+        elif key == "fav":
+            secs.append(
+                f'<section class="tab-panel" data-panel="{key}"{hidden}>'
+                f'<p style="color:var(--muted);padding:2rem;text-align:center">{_("加载中…", lang)}</p>'
                 f'</section>'
             )
         elif cards:
@@ -1137,7 +1271,7 @@ def render_home(files, prefix="", lang="zh"):
     body = header + tabs + "\n".join(secs)
     return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
-def render_md(path, prefix="", lang="zh"):
+def render_md(path, prefix="", lang="zh", f_rel=None, f_root=None):
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _strip_html(raw)
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
@@ -1146,14 +1280,122 @@ def render_md(path, prefix="", lang="zh"):
     dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
+    # Embed raw md as JSON (handles all Unicode safely)
+    raw_json = json.dumps(raw)
+    f_rel_s = escape(f_rel or path.name)
+    f_root_s = escape(str(f_root or path.parent))
+    save_text = _("保存", lang)
+    editor_js = """<link rel="stylesheet" href="%s/icons/easymde.css">
+<script src="%s/icons/easymde.js"></script>
+<style>
+#mdEditor { margin: 1rem 0; }
+.btn-edit { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; color: var(--fg); margin-left: 4px; }
+.btn-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* EasyMDE Owlia Nest theme */
+.EasyMDEContainer .CodeMirror { background: var(--card-bg); color: var(--fg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar { background: var(--card-bg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar button { color: var(--fg); }
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active { background: var(--tint); border-color: var(--accent); }
+.EasyMDEContainer .editor-toolbar i.separator { border-left-color: var(--border); border-right-color: transparent; }
+.EasyMDEContainer .editor-preview { background: var(--bg); color: var(--fg); }
+.EasyMDEContainer .editor-preview pre { background: var(--code-bg); }
+.EasyMDEContainer .editor-statusbar { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-gutters { background: var(--code-bg); border-right-color: var(--border); color: var(--muted); }
+.EasyMDEContainer .CodeMirror-linenumber { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--accent); }
+.EasyMDEContainer .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen::before,
+.EasyMDEContainer .editor-toolbar.fullscreen::after { background: none; }
+.EasyMDEContainer .CodeMirror-placeholder { color: var(--muted); }
+.cm-s-easymde .cm-header { color: var(--accent); }
+.cm-s-easymde .cm-link { color: var(--accent); }
+.cm-s-easymde .cm-url { color: var(--muted); }
+.cm-s-easymde .cm-quote { color: var(--muted); }
+.cm-s-easymde .cm-comment { background: var(--code-bg); color: var(--muted); }
+.cm-s-easymde .cm-string { color: #a5d6ff; }
+.cm-s-easymde .cm-tag { color: #7ee787; }
+.cm-s-easymde .cm-attribute { color: #d2a8ff; }
+.easymde-dropdown-content { background: var(--card-bg); border: 1px solid var(--border); }
+.easymde-dropdown-content button { color: var(--fg); }
+.easymde-dropdown-content button:hover { background: var(--tint); }
+.editor-toolbar .easymde-dropdown { border-color: var(--fg); }
+.CodeMirror div.CodeMirror-cursors { visibility: visible; }
+</style>
+<script>
+var _easyMDE = null;
+var _mdRaw = null;
+var _mdFile = { f: '%s', r: '%s' };
+var _mdPrefix = '%s';
+function toggleEdit() {
+  if (!_mdRaw) {
+    try { _mdRaw = JSON.parse(document.getElementById('mdRawData').textContent); } catch(e) {}
+    if (!_mdRaw) _mdRaw = '';
+  }
+  document.getElementById('mdView').style.display = 'none';
+  document.getElementById('mdEditor').style.display = '';
+  document.getElementById('btnEdit').style.display = 'none';
+  document.getElementById('btnSave').style.display = '';
+  document.getElementById('btnCancel').style.display = '';
+  if (!_easyMDE) {
+    _easyMDE = new EasyMDE({
+      element: document.getElementById('mdTextarea'),
+      initialValue: _mdRaw,
+      spellChecker: false,
+      status: false,
+      autosave: { enabled: false },
+      renderingConfig: { codeSyntaxHighlighting: true }
+    });
+  } else {
+    _easyMDE.value(_mdRaw);
+  }
+}
+function cancelEdit() {
+  document.getElementById('mdView').style.display = '';
+  document.getElementById('mdEditor').style.display = 'none';
+  document.getElementById('btnEdit').style.display = '';
+  document.getElementById('btnSave').style.display = 'none';
+  document.getElementById('btnCancel').style.display = 'none';
+}
+function saveEdit() {
+  var content = _easyMDE ? _easyMDE.value() : '';
+  var btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  fetch(_mdPrefix + '/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ f: _mdFile.f, r: _mdFile.r, content: content })
+  }).then(function(r){ return r.json(); }).then(function(r) {
+    if (r.ok) {
+      _mdRaw = content;
+      location.reload();
+    } else {
+      alert(r.error || 'Save failed');
+      btn.disabled = false;
+      btn.textContent = '%s';
+    }
+  }).catch(function(e) {
+    alert('Network error: ' + e);
+    btn.disabled = false;
+    btn.textContent = '%s';
+  });
+}
+</script>
+<script type="application/json" id="mdRawData">%s</script>
+""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, save_text, raw_json)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
-<div class="markdown-body">{html}</div>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
+<div id="mdView" class="markdown-body">{html}</div>
+<div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, editor_js, prefix=prefix, lang=lang)
 
 def render_txt(path, prefix="", lang="zh"):
     raw = path.read_text(encoding="utf-8", errors="replace")
@@ -1269,11 +1511,19 @@ def create_app(targets=None, prefix=""):
 
     def _check_post_origin(headers) -> bool:
         origin = (headers.get("Origin") or "").strip()
+        # Allow requests without Origin (e.g., PWA, direct fetch)
         if not origin:
-            return False
+            return True
         allow = ("http://localhost", "http://127.0.0.1", "http://0.0.0.0",
-                 "https://localhost", "https://127.0.0.1", "https://0.0.0.0")
-        return origin.startswith(allow)
+                 "https://localhost", "https://127.0.0.1", "https://0.0.0.0",
+                 "capacitor://localhost", "file://")
+        if origin.startswith(allow):
+            return True
+        # Also allow if Host header is localhost or known local hostname
+        host = (headers.get("Host") or "").split(":")[0]
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "bunker", "bunker.local"):
+            return True
+        return False
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -1291,6 +1541,17 @@ def create_app(targets=None, prefix=""):
             elif path.startswith("/icons/") and path[7:] in ICONS:
                 mime, data = ICONS[path[7:]]
                 self._send(data, mime)
+            elif path.startswith("/icons/"):
+                # Serve static files from icons dir (easymde, bytemd, etc.)
+                fs_path = os.path.join(os.path.dirname(__file__), "icons", path[len("/icons/"):])
+                if os.path.isfile(fs_path):
+                    ext = os.path.splitext(fs_path)[1].lower()
+                    mime_map = {".css": "text/css", ".js": "application/javascript", ".mjs": "application/javascript",
+                                ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2"}
+                    with open(fs_path, "rb") as f:
+                        self._send(f.read(), mime_map.get(ext, "application/octet-stream"))
+                else:
+                    self.send_error(404)
             elif path == "/favicon.ico":
                 if "favicon-32.png" in ICONS:
                     mime, data = ICONS["favicon-32.png"]
@@ -1300,14 +1561,19 @@ def create_app(targets=None, prefix=""):
             elif path == "/api/dirs":
                 # Reload from disk to catch external changes
                 _t, _e, _x = load_config(config_path)
+                _favs = load_favorites(config_path)
                 self._send(json.dumps({
                     "dirs": [str(d) for d in _t],
                     "exclude_dirs": _e,
                     "exclude_exts": _x,
+                    "favorites": sorted(_favs),
                 }), "application/json; charset=utf-8")
             elif path == "/api/version":
                 info = _check_remote_version()
                 self._send(json.dumps(info), "application/json; charset=utf-8")
+            elif path == "/api/favorites":
+                favs = load_favorites(config_path)
+                self._send(json.dumps({"favorites": sorted(favs)}), "application/json; charset=utf-8")
             elif path == "/api/cache-status":
                 with _cache_lock:
                     payload = {
@@ -1351,9 +1617,9 @@ def create_app(targets=None, prefix=""):
                 with _state_lock:
                     _state[0], _state[1], _state[2] = _tm, _em, _xm
                 with _cache_lock:
-                    have_cache = bool(_cache.get("files"))
                     scanning = bool(_cache.get("scanning"))
-                if (not have_cache) and (not scanning):
+                # Always re-scan in background to keep cache fresh
+                if not scanning:
                     _start_scan_async()
                 with _cache_lock:
                     files = list(_cache.get("files") or [])
@@ -1374,7 +1640,7 @@ def create_app(targets=None, prefix=""):
                 if fpath.exists() and fpath.is_file():
                     ext = fpath.suffix.lower()
                     if ext == ".md":
-                        self._html(render_md(fpath, prefix, lang))
+                        self._html(render_md(fpath, prefix, lang, f_rel, f_root_p))
                     elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
                                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
                         self._html(render_media(fpath, prefix, lang))
@@ -1480,6 +1746,19 @@ def create_app(targets=None, prefix=""):
             if path == "/api/refresh":
                 _start_scan_async(force=True)
                 self._send(json.dumps({"ok": True}), "application/json")
+            elif path == "/api/favorites/toggle":
+                fpath = data.get("path", "").strip()
+                if not fpath:
+                    self._send(json.dumps({"ok": False, "error": "missing path"}), "application/json"); return
+                favs = load_favorites(config_path)
+                if fpath in favs:
+                    favs.discard(fpath)
+                    action = "removed"
+                else:
+                    favs.add(fpath)
+                    action = "added"
+                save_favorites(favs, config_path)
+                self._send(json.dumps({"ok": True, "action": action, "favorites": sorted(favs)}), "application/json")
             elif path == "/api/add-dir":
                 d = data.get("dir", "").strip()
                 if not d:
@@ -1573,6 +1852,31 @@ def create_app(targets=None, prefix=""):
                 except Exception as e:
                     self._send(json.dumps({"ok": False, "error": str(e)}),
                                 "application/json")
+            elif path == "/api/save":
+                f_rel = data.get("f", "").strip()
+                f_root = data.get("r", "").strip()
+                content = data.get("content", "")
+                if not f_rel or not f_root:
+                    self._send(json.dumps({"ok": False, "error": "missing f/r"}), "application/json"); return
+                f_root_p = Path(f_root).expanduser().resolve()
+                fpath = (f_root_p / f_rel).resolve()
+                if not any(_path_is_within(f_root_p, t) for t in targets):
+                    self.send_error(403, "Forbidden"); return
+                try:
+                    fpath.relative_to(f_root_p)
+                except Exception:
+                    self.send_error(403, "Forbidden"); return
+                if not fpath.exists() or not fpath.is_file():
+                    self._send(json.dumps({"ok": False, "error": "file not found"}), "application/json"); return
+                try:
+                    fpath.write_text(content, encoding="utf-8")
+                    # Clear file cache to pick up changes
+                    with _cache_lock:
+                        if "files" in _cache:
+                            _cache["files"] = [f for f in _cache["files"] if f.get("path") != str(fpath)]
+                    self._send(json.dumps({"ok": True}), "application/json")
+                except Exception as e:
+                    self._send(json.dumps({"ok": False, "error": str(e)}), "application/json")
             else:
                 self.send_error(404)
 
