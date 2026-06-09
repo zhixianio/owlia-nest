@@ -1275,6 +1275,19 @@ def render_home(files, prefix="", lang="zh"):
     body = header + tabs + "\n".join(secs)
     return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
+def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):
+    """Build breadcrumb HTML for file view pages with directory path.
+
+    e.g.  f_rel='sub/dir/file.md'  →  ← Home / sub / dir / file.md
+    """
+    rel = f_rel or path.name
+    parts = Path(rel).parts
+    crumbs = [f'<a href="{prefix}/">{_("← Home", lang)}</a>']
+    for part in parts:
+        crumbs.append(escape(part))
+    return " / ".join(crumbs)
+
+
 def render_md(path, prefix="", lang="zh", f_rel=None, f_root=None):
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _strip_html(raw)
@@ -1418,11 +1431,12 @@ document.addEventListener('keydown', function(e) {
 </script>
 <script type="application/json" id="mdRawData">%s</script>
 """ % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, raw_json)
+    breadcrumb = _file_breadcrumb(path, prefix, f_rel_s, f_root, lang)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
+<div class="breadcrumb">{breadcrumb} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
 <div id="mdView" class="markdown-body">{html}</div>
 <div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
@@ -1571,11 +1585,12 @@ document.addEventListener('keydown', function(e) {
 """ % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, escape(raw))
     # For txt files, show plain text view (pre-formatted) instead of markdown rendered
     raw_escaped = escape(raw)
+    breadcrumb = _file_breadcrumb(path, prefix, f_rel_s, f_root, lang)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
+<div class="breadcrumb">{breadcrumb} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
 <div id="mdView"><pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw_escaped}</pre></div>
 <div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
@@ -1604,7 +1619,7 @@ def render_media(path, prefix="", lang="zh"):
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
+<div class="breadcrumb">{_file_breadcrumb(path, prefix, None, path.parent, lang)} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
 <div style="margin:1rem 0">{elem}</div>
 <div style="margin-top:0.5rem;color:var(--muted);font-size:0.8rem">{safe_name} · {size_fmt(path.stat().st_size)}</div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
