@@ -893,6 +893,14 @@ function removeExcludeExt(e){{
 (function(){{
   loadDirs();
   loadFavorites();
+  // Auto-navigate browse tab if ?browse=<dirPath> is in URL
+  var qp = new URLSearchParams(location.search);
+  var browseTarget = qp.get('browse');
+  if (browseTarget) {{
+    var browseBtn = document.querySelector('.tabs-bar button[data-tab="browse"]');
+    if (browseBtn) browseBtn.click();
+    setTimeout(function(){{ loadBrowse(decodeURIComponent(browseTarget)); }}, 100);
+  }}
 }})();
 </script>
 </body>
@@ -1276,15 +1284,27 @@ def render_home(files, prefix="", lang="zh"):
     return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
 def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):
-    """Build breadcrumb HTML for file view pages with directory path.
-
-    e.g.  f_rel='sub/dir/file.md'  →  ← Home / sub / dir / file.md
-    """
+    """Build breadcrumb HTML for file view pages with clickable directory path."""
+    from urllib.parse import quote as _quote
     rel = f_rel or path.name
     parts = Path(rel).parts
+    f_root_str = str(f_root) if f_root else str(path.parent)
     crumbs = [f'<a href="{prefix}/">{_("← Home", lang)}</a>']
+    cur_parts = []
     for part in parts:
-        crumbs.append(escape(part))
+        cur_parts.append(part)
+        if part == parts[-1]:
+            # Last part is the file itself — plain text
+            crumbs.append(escape(part))
+        else:
+            # Directory — link to home page with ?browse=<dirPath> to auto-navigate
+            dir_rel = "/".join(cur_parts)
+            dir_abs = str(Path(f_root_str) / dir_rel)
+            safe_dir = _quote(dir_abs, safe='')
+            crumbs.append(
+                '<a href="' + prefix + '/?browse=' + safe_dir + '">' +
+                escape(part) + '</a>'
+            )
     return " / ".join(crumbs)
 
 
