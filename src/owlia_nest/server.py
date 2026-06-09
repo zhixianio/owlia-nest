@@ -1428,22 +1428,158 @@ document.addEventListener('keydown', function(e) {
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
     return mk_page(f"{safe_name} — Owlia Nest", body, editor_js, prefix=prefix, lang=lang)
 
-def render_txt(path, prefix="", lang="zh"):
+def render_txt(path, prefix="", lang="zh", f_rel=None, f_root=None):
     raw = path.read_text(encoding="utf-8", errors="replace")
-    raw = escape(raw)
     from urllib.parse import quote
     safe_url = quote(path.name)
     dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
+    f_rel_s = escape(f_rel or path.name)
+    f_root_s = escape(str(f_root or path.parent))
+    save_text = _("保存", lang)
+    # Reuse the same editor_js template from render_md
+    editor_js = """<link rel="stylesheet" href="%s/icons/easymde.css">
+<script src="%s/icons/easymde.js"></script>
+<style>
+#mdEditor { margin: 1rem 0; }
+.btn-edit { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; color: var(--fg); margin-left: 4px; }
+.btn-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* EasyMDE Owlia Nest theme */
+.EasyMDEContainer .CodeMirror { background: var(--card-bg); color: var(--fg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar { background: var(--card-bg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar button { color: var(--fg); }
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active { background: var(--tint); border-color: var(--accent); }
+.EasyMDEContainer .editor-toolbar i.separator { border-left-color: var(--border); border-right-color: transparent; }
+.EasyMDEContainer .editor-preview { background: var(--bg); color: var(--fg); }
+.EasyMDEContainer .editor-preview pre { background: var(--code-bg); }
+.EasyMDEContainer .editor-statusbar { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-gutters { background: var(--code-bg); border-right-color: var(--border); color: var(--muted); }
+.EasyMDEContainer .CodeMirror-linenumber { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--accent); }
+.EasyMDEContainer .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen::before,
+.EasyMDEContainer .editor-toolbar.fullscreen::after { background: none; }
+.EasyMDEContainer .CodeMirror-placeholder { color: var(--muted); }
+.cm-s-easymde .cm-header { color: var(--accent); }
+.cm-s-easymde .cm-link { color: var(--accent); }
+.cm-s-easymde .cm-url { color: var(--muted); }
+.cm-s-easymde .cm-quote { color: var(--muted); }
+.cm-s-easymde .cm-comment { background: var(--code-bg); color: var(--muted); }
+.cm-s-easymde .cm-string { color: #a5d6ff; }
+.cm-s-easymde .cm-tag { color: #7ee787; }
+.cm-s-easymde .cm-attribute { color: #d2a8ff; }
+.easymde-dropdown-content { background: var(--card-bg); border: 1px solid var(--border); }
+.easymde-dropdown-content button { color: var(--fg); }
+.easymde-dropdown-content button:hover { background: var(--tint); }
+.editor-toolbar .easymde-dropdown { border-color: var(--fg); }
+.CodeMirror div.CodeMirror-cursors { visibility: visible; }
+</style>
+<script>
+var _easyMDE = null;
+var _mdRaw = null;
+var _mdFile = { f: '%s', r: '%s' };
+var _mdPrefix = '%s';
+var _saveLabel = '%s';
+function toggleEdit() {
+  if (!_mdRaw) {
+    try { _mdRaw = document.getElementById('mdRawData').textContent; } catch(e) {}
+    if (!_mdRaw) _mdRaw = '';
+  }
+  document.getElementById('mdView').style.display = 'none';
+  document.getElementById('mdEditor').style.display = '';
+  document.getElementById('btnEdit').style.display = 'none';
+  document.getElementById('btnSave').style.display = '';
+  document.getElementById('btnCancel').style.display = '';
+  if (!_easyMDE) {
+    _easyMDE = new EasyMDE({
+      element: document.getElementById('mdTextarea'),
+      initialValue: _mdRaw,
+      spellChecker: false,
+      status: false,
+      autosave: { enabled: false },
+      renderingConfig: { codeSyntaxHighlighting: true },
+      toolbar: ["bold", "italic", "|", "unordered-list", "ordered-list", "|", "quote", "code", "|", "preview", "fullscreen", "|", "guide"]
+    });
+  } else {
+    _easyMDE.value(_mdRaw);
+  }
+}
+function cancelEdit() {
+  document.getElementById('mdView').style.display = '';
+  document.getElementById('mdEditor').style.display = 'none';
+  document.getElementById('btnEdit').style.display = '';
+  document.getElementById('btnSave').style.display = 'none';
+  document.getElementById('btnCancel').style.display = 'none';
+}
+function saveEdit() {
+  var content = _easyMDE ? _easyMDE.value() : '';
+  var btn = document.getElementById('btnSave');
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  fetch(_mdPrefix + '/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ f: _mdFile.f, r: _mdFile.r, content: content })
+  }).then(function(r){ return r.json(); }).then(function(r) {
+    if (r.ok) {
+      _mdRaw = content;
+      // Update rendered view in-place by re-fetching the view page
+      var viewUrl = _mdPrefix + '/view?f=' + encodeURIComponent(_mdFile.f) + '&r=' + encodeURIComponent(_mdFile.r);
+      fetch(viewUrl).then(function(resp){ return resp.text(); }).then(function(html) {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var newView = tmp.querySelector('#mdView');
+        if (newView) {
+          document.getElementById('mdView').innerHTML = newView.innerHTML;
+        }
+        // Stay in edit mode — just update the button to show success
+        btn.textContent = '✅ ' + _saveLabel;
+        setTimeout(function() { btn.textContent = '💾 ' + _saveLabel; }, 1200);
+        btn.disabled = false;
+      }).catch(function() {
+        btn.textContent = _saveLabel;
+        btn.disabled = false;
+      });
+    } else {
+      alert(r.error || 'Save failed');
+      btn.textContent = _saveLabel;
+      btn.disabled = false;
+    }
+  }).catch(function(e) {
+    alert('Network error: ' + e);
+    btn.textContent = _saveLabel;
+    btn.disabled = false;
+  });
+}
+/* Keyboard shortcut: Ctrl+S / Cmd+S → save (stay in editor) */
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    var saveBtn = document.getElementById('btnSave');
+    if (saveBtn && saveBtn.style.display !== 'none') {
+      saveEdit();
+    }
+  }
+});
+</script>
+<script type="text/plain" id="mdRawData">%s</script>
+""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, escape(raw))
+    # For txt files, show plain text view (pre-formatted) instead of markdown rendered
+    raw_escaped = escape(raw)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a></div>
-<pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw}</pre>
+<div class="breadcrumb"><a href="{prefix}/">{_("← Home", lang)}</a> / {safe_name} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
+<div id="mdView"><pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw_escaped}</pre></div>
+<div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, editor_js, prefix=prefix, lang=lang)
 
 def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
@@ -1672,6 +1808,8 @@ def create_app(targets=None, prefix=""):
                     ext = fpath.suffix.lower()
                     if ext == ".md":
                         self._html(render_md(fpath, prefix, lang, f_rel, f_root_p))
+                    elif ext == ".txt":
+                        self._html(render_txt(fpath, prefix, lang, f_rel, f_root_p))
                     elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
                                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
                         self._html(render_media(fpath, prefix, lang))
