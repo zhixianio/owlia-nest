@@ -846,7 +846,9 @@ function renderBrowse(data){{
   }}
   for(var k=0;k<fs.length;k++){{ 
     var f=fs[k];
-    var href = '{api_base}/view?f=' + encodeURIComponent(f.name) + '&r=' + encodeURIComponent(data.path);
+    var fRel = f.rel_path || f.name;
+    var fRoot = data.root || data.path;
+    var href = '{api_base}/view?f=' + encodeURIComponent(fRel) + '&r=' + encodeURIComponent(fRoot);
     h += '<div class="browse-item">📄 <a href="'+href+'">'+escapeHtml(f.name)+'</a></div>';
   }}
   listEl.innerHTML = h || '<p style="color:var(--muted)">'+_('暂无内容')+'</p>';
@@ -1795,13 +1797,14 @@ def create_app(targets=None, prefix=""):
                     self.send_error(403, "Forbidden"); return
                 if not dpath.exists() or not dpath.is_dir():
                     self._send(json.dumps({"ok": False, "error": "not a dir"}), "application/json; charset=utf-8"); return
-                payload = browse_dir(dpath, cap=5000)
-                # Breadcrumbs: relative parts from monitored root
+                # Find monitored root for this directory
                 root = None
                 for t in targets:
                     if _path_is_within(dpath, t):
                         root = t
                         break
+                payload = browse_dir(dpath, cap=5000)
+                # Breadcrumbs: relative parts from monitored root
                 crumbs = []
                 if root is not None:
                     rel = dpath.relative_to(root)
@@ -1810,8 +1813,13 @@ def create_app(targets=None, prefix=""):
                     for part in rel.parts:
                         cur = cur / part
                         crumbs.append({"name": part, "path": str(cur)})
+                    # Add rel_path to each file so browse links carry full path from root
+                    for finfo in payload.get("files", []):
+                        finfo["rel_path"] = str(Path(finfo["path"]).relative_to(root))
                 payload["breadcrumbs"] = crumbs
                 payload["path"] = str(dpath)
+                if root is not None:
+                    payload["root"] = str(root)
                 self._send(json.dumps(payload), "application/json; charset=utf-8")
             elif path == "/":
                 # Reload config from disk to avoid stale state
