@@ -98,7 +98,10 @@ T = {
     "排除此目录": {"zh": "排除此目录", "en": "Exclude Dir"},
     "排除类型":   {"zh": "排除类型",   "en": "Exclude Type"},
 
-    # Time ago
+    # Time ago / day groups
+    "今天":   {"zh": "今天",   "en": "Today"},
+    "昨天":   {"zh": "昨天",   "en": "Yesterday"},
+    "搜索整个档案库…": {"zh": "搜索整个档案库…", "en": "Search the nest…"},
     "刚才":   {"zh": "刚才",   "en": "just now"},
     "分钟前": {"zh": "分钟前", "en": "m ago"},
     "小时前": {"zh": "小时前", "en": "h ago"},
@@ -186,6 +189,24 @@ def get_lang(handler):
 
 # ── Themes ────────────────────────────────────────────────────────
 THEMES = {
+    "nest-dark": {
+        "name": "🦉 暖夜 Nest",
+        "css": """\
+  --bg: #16120d; --fg: #ece4d3; --accent: #e2a14e;
+  --muted: #9a8c74; --border: #382f22; --card-bg: #211b14; --code-bg: #1d1812;
+  --tint: #33270f;
+  --syn-kw: #ff9d6e; --syn-str: #b8d68c; --syn-com: #7d7160; --syn-num: #8fc7e8;
+  --syn-fn: #e8c87a; --syn-cls: #d8a8f0; --syn-op: #d8cfc0;""",
+    },
+    "paper": {
+        "name": "📄 纸页 Paper",
+        "css": """\
+  --bg: #f6f0e4; --fg: #2b2418; --accent: #b4502e;
+  --muted: #8a7c66; --border: #ddd2bd; --card-bg: #fcf8ef; --code-bg: #efe7d6;
+  --tint: #f0e2c8;
+  --syn-kw: #a83232; --syn-str: #3d6b35; --syn-com: #968a75; --syn-num: #1d5e8a;
+  --syn-fn: #7a4a9e; --syn-cls: #8a5a1e; --syn-op: #2b2418;""",
+    },
     "github": {
         "name": "☀️ GitHub Light",
         "css": """\
@@ -315,8 +336,8 @@ def _manifest(prefix=""):
         "start_url": f"{prefix}/",
         "scope": f"{prefix}/",
         "display": "standalone",
-        "background_color": "#0d1117",
-        "theme_color": "#0969da",
+        "background_color": "#16120d",
+        "theme_color": "#e2a14e",
         "icons": [
             {"src": f"{prefix}/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": f"{prefix}/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -403,7 +424,7 @@ PAGE_TPL = """\
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Owlia Nest">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#16120d">
 <link rel="stylesheet" href="{api_base}/static/app.css">
 <style>
 :root {{ {__theme_css__} }}
@@ -708,7 +729,7 @@ def fr_query(f_rel, root):
     return f"f={quote(str(f_rel))}&r={quote(str(root))}"
 
 # ── HTML builders ─────────────────────────────────────────────────
-def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", lang="zh"):
+def mk_page(title, body, head_extra="", default_theme="nest-dark", prefix="", lang="zh"):
     cfg = json.dumps({
         "prefix": prefix,
         "lang": lang,
@@ -728,25 +749,49 @@ def file_card(f, href, lang="zh"):
     fpath = f["path"]
     ext = _ext_of(f["name"])
     safe_name = escape(f["name"])
-    safe_fpath = escape(fpath)
+    root_name = escape(Path(f["root"]).name or str(f["root"]))
+    rel_dir = os.path.dirname(f["rel_path"])
+    rel_dir_html = f'<span class="file-path">{escape(rel_dir)}/</span>' if rel_dir else ''
     return (
         f'<div class="file-card" data-cat="{classify(f)}">'
         f'<span class="file-icon">{icon_for(f)}</span>'
-        f'<button class="btn-star" data-filepath="{escape(fpath)}" title="{_("收藏", lang)}" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button>'
         f'<span class="file-name"><a href="{href}?{fr_query(f["rel_path"], f["root"])}" data-filepath="{escape(fpath)}">{safe_name}</a>'
-        f'<br><span class="file-path">{safe_fpath}</span></span>'
+        f'<span class="file-meta"><span class="root-chip">{root_name}</span>{rel_dir_html}'
         f'<span class="file-date">{time_ago(f["mtime"], lang)}</span>'
-        f'<span class="file-size">{size_fmt(f["size"])}</span>'
+        f'<span class="file-size">{size_fmt(f["size"])}</span></span></span>'
         f'<span class="file-actions">'
         f'<button class="btn-tiny" data-exclude-dir="{escape(dname)}" title="{_("排除此目录", lang)}">{_("排除此目录", lang)}</button>'
         + (f'<button class="btn-tiny" data-exclude-ext=".{ext}" title="{_("排除类型", lang)} .{ext}">{_("排除类型", lang)}</button>' if ext else '') +
+        f'<button class="btn-star" data-filepath="{escape(fpath)}" title="{_("收藏", lang)}" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button>'
         f'</span></div>'
     )
+
+def _day_label(mtime, lang="zh"):
+    """Group label for the recent list: 今天 / 昨天 / MM-DD."""
+    now = time.localtime()
+    then = time.localtime(mtime)
+    days_apart = (time.mktime(now[:3] + (0, 0, 0) + now[6:]) -
+                  time.mktime(then[:3] + (0, 0, 0) + then[6:])) / 86400
+    if days_apart < 0.5:
+        return _("今天", lang)
+    if days_apart < 1.5:
+        return _("昨天", lang)
+    return time.strftime("%m-%d", then)
+
 
 def render_home(files, prefix="", lang="zh"):
     view_url = prefix + "/view"
     cats = {k: [] for k in CATEGORIES}
-    cats["recent"] = [file_card(f, view_url, lang) for f in files[:30]]
+    # Recent: cards interleaved with day dividers
+    recent = []
+    last_label = None
+    for f in files[:30]:
+        label = _day_label(f["mtime"], lang)
+        if label != last_label:
+            recent.append(f'<div class="day-divider">{label}</div>')
+            last_label = label
+        recent.append(file_card(f, view_url, lang))
+    cats["recent"] = recent
     for f in files:
         c = classify(f)
         if c in cats:
@@ -779,7 +824,8 @@ def render_home(files, prefix="", lang="zh"):
         elif cards:
             secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}>{"".join(cards)}</section>')
         else:
-            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}><p style="color:var(--muted);padding:2rem;text-align:center">{_("暂无内容", lang)}</p></section>')
+            empty = f'<div class="empty-state"><span class="owl">\U0001F989</span>{_("暂无内容", lang)}</div>'
+            secs.append(f'<section class="tab-panel" data-panel="{key}"{hidden}>{empty}</section>')
 
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     ver = _check_remote_version()
@@ -808,8 +854,11 @@ def render_home(files, prefix="", lang="zh"):
   </div>
 </header>
 {upgrade_banner}
-<div class="search-row" style="margin:0.75rem 0 1rem">
-  <input id="searchInput" type="search" placeholder="Search..." oninput="doSearch()" style="width:100%;padding:0.6rem 0.75rem;border-radius:10px;border:1px solid var(--border);background:var(--card-bg);color:var(--fg);outline:none">
+<div class="sticky-bar">
+<div class="search-row">
+  <input id="searchInput" type="search" placeholder="{_("搜索整个档案库…", lang)}" oninput="doSearch()" autocomplete="off">
+</div>
+{tabs}
 </div>
 <div id="settingsPanel" class="settings-panel" style="display:none">
   <div class="settings-title">📂 {_("监控目录", lang)}</div>
@@ -834,7 +883,7 @@ def render_home(files, prefix="", lang="zh"):
 
     head_extra = f'<link rel="manifest" href="{prefix}/manifest.json">'
     search_panel = '<section id="searchResults" class="tab-panel" style="display:none"></section>'
-    body = header + tabs + search_panel + "\n".join(secs)
+    body = header + search_panel + "\n".join(secs)
     return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
 def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):

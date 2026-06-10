@@ -338,10 +338,12 @@ function renderFavTab(){
         label = escapeHtml(en.name);
       }
       html += '<div class="file-card">' +
-        '<span class="file-icon">' + icon + '</span>' + star +
+        '<span class="file-icon">' + icon + '</span>' +
         '<span class="file-name">' + label +
-        '<br><span class="file-path">' + escapeHtml(en.path) + '</span></span>' +
+        '<span class="file-meta"><span class="file-path">' + escapeHtml(en.path) + '</span>' +
         (en.mtime_ago ? '<span class="file-date">' + escapeHtml(en.mtime_ago) + '</span>' : '') +
+        '</span></span>' +
+        '<span class="file-actions">' + star + '</span>' +
         '</div>';
     });
     panel.innerHTML = html;
@@ -464,12 +466,16 @@ function renderSearchResults(results){
   var h = '';
   results.forEach(function(f){
     var href = API + '/view?f=' + encodeURIComponent(f.rel_path) + '&r=' + encodeURIComponent(f.root);
+    var rootName = (f.root || '').split('/').filter(Boolean).pop() || '';
+    var relDir = (f.rel_path || '').split('/').slice(0, -1).join('/');
     h += '<div class="file-card">' +
       '<span class="file-icon">' + (f.icon || '📄') + '</span>' +
-      '<button class="btn-star" data-filepath="' + escapeHtml(f.path) + '" title="' + _('收藏') + '" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button>' +
       '<span class="file-name"><a href="' + href + '" data-filepath="' + escapeHtml(f.path) + '">' + escapeHtml(f.name) + '</a>' +
-      '<br><span class="file-path">' + escapeHtml(f.path) + '</span></span>' +
-      '<span class="file-date">' + escapeHtml(f.mtime_ago || '') + '</span>' +
+      '<span class="file-meta">' +
+      (rootName ? '<span class="root-chip">' + escapeHtml(rootName) + '</span>' : '') +
+      (relDir ? '<span class="file-path">' + escapeHtml(relDir) + '/</span>' : '') +
+      '<span class="file-date">' + escapeHtml(f.mtime_ago || '') + '</span></span></span>' +
+      '<span class="file-actions"><button class="btn-star" data-filepath="' + escapeHtml(f.path) + '" title="' + _('收藏') + '" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button></span>' +
       '</div>';
   });
   panel.innerHTML = h;
@@ -510,6 +516,25 @@ document.addEventListener('click', function(e){
   var ext = btn.getAttribute('data-exclude-ext');
   if (ext) { quickExcludeExt(ext, btn); return; }
 });
+
+/* ── Reading progress (view pages) ── */
+(function(){
+  if (!document.getElementById('mdView')) return;
+  var bar = document.createElement('div');
+  bar.id = 'readingProgress';
+  document.body.appendChild(bar);
+  var ticking = false;
+  function update(){
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+    ticking = false;
+  }
+  addEventListener('scroll', function(){
+    if (!ticking) { ticking = true; requestAnimationFrame(update); }
+  }, { passive: true });
+  update();
+})();
 
 /* ── Init ── */
 (function(){
