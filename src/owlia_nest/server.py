@@ -968,6 +968,10 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config
             targets, exclude_dirs, exclude_exts = targets
         else:
             exclude_dirs, exclude_exts = [], []
+    # Normalize: handlers compare resolved request paths against these, so
+    # an unresolved symlinked target (/var vs /private/var on macOS) would
+    # pass the containment check but blow up relative_to() later.
+    targets = [Path(t).expanduser().resolve() for t in targets]
     # Wrap in list to allow mutation from nested Handler
     _state = [targets, exclude_dirs, exclude_exts]
     if config_path is None:
@@ -1022,7 +1026,7 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config
 
     def _check_post_origin(headers) -> bool:
         origin = (headers.get("Origin") or "").strip()
-        # Allow requests without Origin (e.g., PWA, direct fetch)
+        # Allow requests without Origin (e.g., PWA, direct fetch, curl)
         if not origin:
             return True
         allow = ("http://localhost", "http://127.0.0.1", "http://0.0.0.0",
@@ -1030,10 +1034,16 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config
                  "capacitor://localhost", "file://")
         if origin.startswith(allow):
             return True
-        # Also allow if Host header is a local address
-        host = (headers.get("Host") or "").split(":")[0]
-        if host in ("localhost", "127.0.0.1", "0.0.0.0"):
-            return True
+        # Same-origin: the Origin host must match the Host the request came
+        # to (covers Tailscale IPs and reverse-proxy domains). A foreign
+        # Origin (cross-site CSRF) never matches and is rejected.
+        host = (headers.get("Host") or "").strip()
+        try:
+            o_netloc = urlparse(origin).netloc
+            if o_netloc and host and o_netloc.lower() == host.lower():
+                return True
+        except Exception:
+            pass
         return False
 
     class Handler(BaseHTTPRequestHandler):
@@ -1051,14 +1061,18 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config
             return False
 
         def do_GET(self):
-            if not self._authed():
-                self.send_error(401, "Unauthorized (append ?token=<token> once to log in)")
-                return
             parsed = urlparse(self.path)
             raw_path = parsed.path
             path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
             if not path.startswith("/"):
                 path = "/" + path
+            # PWA assets stay public: browsers fetch the manifest (and its
+            # icons) without credentials, so gating them breaks installs.
+            public = (path == "/manifest.json" or path == "/favicon.ico"
+                      or path.startswith("/icons/"))
+            if not public and not self._authed():
+                self.send_error(401, "Unauthorized (append ?token=<token> once to log in)")
+                return
             q = parse_qs(parsed.query)
             targets, exclude_dirs, exclude_exts = _state
             lang = get_lang(self)
@@ -1076,6 +1090,8 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config
                 if "favicon-32.png" in ICONS:
                     mime, data = ICONS["favicon-32.png"]
                     self._send(data, mime)
+                else:
+                    self.send_error(404)
             elif path == "/manifest.json":
                 self._send(_manifest(prefix), "application/json; charset=utf-8")
             elif path == "/api/dirs":

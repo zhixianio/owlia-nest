@@ -215,6 +215,25 @@ class TestEndpoints(unittest.TestCase):
         code, body = self.get("/api/favorites/toggle", method="POST", body={"path": "/etc"})
         self.assertFalse(json.loads(body)["ok"])
 
+    def test_post_origin_csrf_blocked(self):
+        headers = {"Cookie": f"owlia_auth={self.TOKEN}",
+                   "Content-Type": "application/json",
+                   "Origin": "https://evil.example"}
+        req = urllib.request.Request(self.base + "/api/refresh",
+                                     data=b"{}", headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                code = r.status
+        except urllib.error.HTTPError as e:
+            code = e.code
+        self.assertEqual(code, 403)
+        # Same-origin POST (Origin matches Host) is allowed
+        headers["Origin"] = self.base
+        req = urllib.request.Request(self.base + "/api/refresh",
+                                     data=b"{}", headers=headers, method="POST")
+        with urllib.request.urlopen(req) as r:
+            self.assertEqual(r.status, 200)
+
     def test_save_endpoint(self):
         code, body = self.get("/api/save", method="POST",
                               body={"f": "hello.md", "r": str(self.root), "content": "# changed\n"})

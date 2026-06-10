@@ -45,3 +45,20 @@ headless instance on a temp profile; pass `--keep` to reuse one you started with
 ## Deploy to bunker only after it works locally
 Once the editor renders correctly here, push and pull/restart on bunker. The
 git→bunker round-trip is for *shipping*, not for *debugging*.
+
+## E2E regression (tools/e2e_serve.py + tools/e2e.mjs)
+
+Full browser regression in an isolated environment (temp fixtures + temp
+config — never touches `~/.config/owlia-nest` or `.devdocs`):
+
+```bash
+.venv/bin/python tools/e2e_serve.py &     # :18800 open, :18801 token-auth
+FR=$(grep -o 'FIXTURE_ROOT=.*' <(sleep 1; head -1 /tmp/e2e-serve.log) | cut -d= -f2)
+node tools/e2e.mjs "$FR" --shot-dir /tmp/owlia-e2e
+```
+
+12 scenarios: home render, deep/unicode scan, sanitized md + pygments,
+EasyMDE save round-trip, special-char filenames, plain-editor save, server
+search, browse + folder bookmark, fav tab → browse jump, theme, language
+toggle, token auth. Exits 0 only if every step passes with zero unexpected
+console/network errors; screenshots land in --shot-dir.
