@@ -10,7 +10,7 @@ import time
 import urllib.request
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
 from html import escape
 
 import markdown
@@ -183,35 +183,45 @@ THEMES = {
         "css": """\
   --bg: #ffffff; --fg: #1f2328; --accent: #0969da;
   --muted: #656d76; --border: #d0d7de; --card-bg: #f6f8fa; --code-bg: #f6f8fa;
-  --tint: #ddf4ff;""",
+  --tint: #ddf4ff;
+  --syn-kw: #cf222e; --syn-str: #0a3069; --syn-com: #6e7781; --syn-num: #0550ae;
+  --syn-fn: #8250df; --syn-cls: #953800; --syn-op: #24292f;""",
     },
     "github-dark": {
         "name": "🌙 GitHub Dark",
         "css": """\
   --bg: #0d1117; --fg: #e6edf3; --accent: #58a6ff;
   --muted: #8b949e; --border: #30363d; --card-bg: #161b22; --code-bg: #161b22;
-  --tint: #0c2d6b;""",
+  --tint: #0c2d6b;
+  --syn-kw: #ff7b72; --syn-str: #a5d6ff; --syn-com: #8b949e; --syn-num: #79c0ff;
+  --syn-fn: #d2a8ff; --syn-cls: #ffa657; --syn-op: #c9d1d9;""",
     },
     "nord": {
         "name": "❄️ Nord",
         "css": """\
   --bg: #2e3440; --fg: #d8dee9; --accent: #88c0d0;
   --muted: #81a1c1; --border: #4c566a; --card-bg: #3b4252; --code-bg: #3b4252;
-  --tint: #434c5e;""",
+  --tint: #434c5e;
+  --syn-kw: #81a1c1; --syn-str: #a3be8c; --syn-com: #616e88; --syn-num: #b48ead;
+  --syn-fn: #88c0d0; --syn-cls: #8fbcbb; --syn-op: #eceff4;""",
     },
     "dracula": {
         "name": "🧛 Dracula",
         "css": """\
   --bg: #282a36; --fg: #f8f8f2; --accent: #bd93f9;
   --muted: #6272a4; --border: #44475a; --card-bg: #343746; --code-bg: #343746;
-  --tint: #44475a;""",
+  --tint: #44475a;
+  --syn-kw: #ff79c6; --syn-str: #f1fa8c; --syn-com: #6272a4; --syn-num: #bd93f9;
+  --syn-fn: #50fa7b; --syn-cls: #8be9fd; --syn-op: #f8f8f2;""",
     },
     "solarized": {
         "name": "📜 Solarized",
         "css": """\
   --bg: #fdf6e3; --fg: #657b83; --accent: #268bd2;
   --muted: #839496; --border: #93a1a1; --card-bg: #eee8d5; --code-bg: #eee8d5;
-  --tint: #eee8d5;""",
+  --tint: #eee8d5;
+  --syn-kw: #859900; --syn-str: #2aa198; --syn-com: #93a1a1; --syn-num: #d33682;
+  --syn-fn: #268bd2; --syn-cls: #b58900; --syn-op: #657b83;""",
     },
 }
 
@@ -412,6 +422,18 @@ header p { color: var(--muted); font-size: 0.85rem; }
 .markdown-body th { background: var(--card-bg); font-weight: 600; }
 .markdown-body blockquote { border-left: 3px solid var(--accent); padding: 0.5rem 1rem; color: var(--muted); margin: 0.75rem 0; background: var(--tint, var(--card-bg)); border-radius: 0 6px 6px 0; }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+/* Pygments token colors (codehilite css_class="highlight") */
+.highlight .k, .highlight .kc, .highlight .kd, .highlight .kn, .highlight .kp, .highlight .kr, .highlight .kt, .highlight .ow { color: var(--syn-kw); }
+.highlight .s, .highlight .s1, .highlight .s2, .highlight .sa, .highlight .sb, .highlight .sc, .highlight .sd, .highlight .se, .highlight .sh, .highlight .si, .highlight .sx, .highlight .sr, .highlight .ss, .highlight .dl { color: var(--syn-str); }
+.highlight .c, .highlight .c1, .highlight .cm, .highlight .cp, .highlight .cpf, .highlight .cs, .highlight .ch { color: var(--syn-com); font-style: italic; }
+.highlight .m, .highlight .mb, .highlight .mf, .highlight .mh, .highlight .mi, .highlight .mo, .highlight .il { color: var(--syn-num); }
+.highlight .nf, .highlight .fm, .highlight .nd { color: var(--syn-fn); }
+.highlight .nc, .highlight .nn, .highlight .ne, .highlight .nb, .highlight .bp, .highlight .nt { color: var(--syn-cls); }
+.highlight .na, .highlight .nv, .highlight .vc, .highlight .vg, .highlight .vi, .highlight .vm { color: var(--syn-num); }
+.highlight .o { color: var(--syn-op); }
+.highlight .gh, .highlight .gu { color: var(--syn-kw); font-weight: 600; }
+.highlight .gd { color: var(--syn-kw); }
+.highlight .gi { color: var(--syn-str); }
 .markdown-body img { max-width: 100%; height: auto; border-radius: 6px; }
 .back-link { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
 .back-link a { color: var(--accent); text-decoration: none; }
@@ -1147,6 +1169,10 @@ def icon_for(f):
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     return _FILE_ICON.get(ext, "📁" if f["is_dir"] else "📎")
 
+def fr_query(f_rel, root):
+    """URL-encoded `f=<rel>&r=<root>` query string for view/media/download links."""
+    return f"f={quote(str(f_rel))}&r={quote(str(root))}"
+
 # ── HTML builders ─────────────────────────────────────────────────
 def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", lang="zh"):
     theme_css = THEMES[default_theme]["css"].strip()
@@ -1182,7 +1208,7 @@ def file_card(f, href, lang="zh"):
         f'<div class="file-card" data-cat="{classify(f)}">'
         f'<span class="file-icon">{icon_for(f)}</span>'
         f'<button class="btn-star" data-filepath="{escape(fpath)}" title="{_("收藏", lang)}" onclick="event.preventDefault();event.stopPropagation();toggleFav(this.dataset.filepath,this)">☆</button>'
-        f'<span class="file-name"><a href="{href}?f={f["rel_path"]}&r={f["root"]}" data-filepath="{escape(fpath)}">{safe_name}</a>'
+        f'<span class="file-name"><a href="{href}?{fr_query(f["rel_path"], f["root"])}" data-filepath="{escape(fpath)}">{safe_name}</a>'
         f'<br><span class="file-path">{safe_fpath}</span></span>'
         f'<span class="file-date">{time_ago(f["mtime"], lang)}</span>'
         f'<span class="file-size">{size_fmt(f["size"])}</span>'
@@ -1314,9 +1340,7 @@ def render_md(path, prefix="", lang="zh", f_rel=None, f_root=None):
     raw = path.read_text(encoding="utf-8", errors="replace")
     raw = _strip_html(raw)
     html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
-    from urllib.parse import quote
-    safe_url = quote(path.name)
-    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
+    dl_url = f"{prefix}/download?{fr_query(f_rel or path.name, f_root or path.parent)}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
     # Embed raw md as JSON (handles all Unicode safely)
@@ -1466,9 +1490,7 @@ document.addEventListener('keydown', function(e) {
 
 def render_txt(path, prefix="", lang="zh", f_rel=None, f_root=None):
     raw = path.read_text(encoding="utf-8", errors="replace")
-    from urllib.parse import quote
-    safe_url = quote(path.name)
-    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
+    dl_url = f"{prefix}/download?{fr_query(f_rel or path.name, f_root or path.parent)}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
     f_rel_s = escape(f_rel or path.name)
@@ -1621,11 +1643,9 @@ document.addEventListener('keydown', function(e) {
 def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
     ext = path.suffix.lower()
-    from urllib.parse import quote
-    safe_url = quote(path.name)
-    dl_url = f"{prefix}/download?f={safe_url}&r={path.parent}"
+    dl_url = f"{prefix}/download?{fr_query(path.name, path.parent)}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
-    media_url = f"{prefix}/media?f={path.name}&r={path.parent}"
+    media_url = f"{prefix}/media?{fr_query(path.name, path.parent)}"
     safe_name = escape(path.name)
 
     _audio_mime = {".mp3": "mpeg", ".wav": "wav", ".ogg": "ogg", ".m4a": "mp4", ".opus": "opus"}
@@ -1648,7 +1668,12 @@ def render_media(path, prefix="", lang="zh"):
     return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 # ── WSGI/HTTP handler ────────────────────────────────────────────
-def create_app(targets=None, prefix=""):
+def create_app(targets=None, prefix="", ephemeral=False):
+    """Build the request handler.
+
+    ephemeral=True means targets were given explicitly (CLI args): never
+    reload/overwrite them from the on-disk config.
+    """
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     def _path_is_within(path: Path, parent: Path) -> bool:
@@ -1764,7 +1789,10 @@ def create_app(targets=None, prefix=""):
                 self._send(_manifest(prefix), "application/json; charset=utf-8")
             elif path == "/api/dirs":
                 # Reload from disk to catch external changes
-                _t, _e, _x = load_config(config_path)
+                if ephemeral:
+                    _t, _e, _x = targets, exclude_dirs, exclude_exts
+                else:
+                    _t, _e, _x = load_config(config_path)
                 _favs = load_favorites(config_path)
                 self._send(json.dumps({
                     "dirs": [str(d) for d in _t],
@@ -1823,9 +1851,10 @@ def create_app(targets=None, prefix=""):
                 self._send(json.dumps(payload), "application/json; charset=utf-8")
             elif path == "/":
                 # Reload config from disk to avoid stale state
-                _tm, _em, _xm = load_config(config_path)
-                with _state_lock:
-                    _state[0], _state[1], _state[2] = _tm, _em, _xm
+                if not ephemeral:
+                    _tm, _em, _xm = load_config(config_path)
+                    with _state_lock:
+                        _state[0], _state[1], _state[2] = _tm, _em, _xm
                 with _cache_lock:
                     scanning = bool(_cache.get("scanning"))
                 # Always re-scan in background to keep cache fresh
@@ -1948,7 +1977,7 @@ def create_app(targets=None, prefix=""):
             targets, exclude_dirs, exclude_exts = _state
 
             # Sync in-memory state from disk before mutating (prevents stale overwrites)
-            if path.startswith("/api/") and path not in ("/api/version", "/api/dirs"):
+            if not ephemeral and path.startswith("/api/") and path not in ("/api/version", "/api/dirs"):
                 _disk_t, _disk_e, _disk_x = load_config(config_path)
                 _state[0] = _disk_t
                 _state[1] = _disk_e
@@ -2051,10 +2080,11 @@ def create_app(targets=None, prefix=""):
                     msg = result.stdout.split("\n")[-3:] if ok else result.stderr[-200:]
 
                     if ok:
-                        # Restart in-place: replace this process with upgraded code
-                        # Also try launchd/systemd as fallback
+                        # Restart: kill our own PID after responding; launchd/systemd
+                        # (KeepAlive/Restart=always) brings the upgraded code back up.
                         subprocess.Popen(
-                            ["bash", "-c", "sleep 0.5; launchctl stop com.owlia.nest 2>/dev/null; kill $(lsof -ti :8788) 2>/dev/null; true"],
+                            ["bash", "-c",
+                             f"sleep 0.5; launchctl stop com.owlia.nest 2>/dev/null; kill {os.getpid()} 2>/dev/null; true"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             start_new_session=True
                         )
@@ -2109,14 +2139,14 @@ def create_app(targets=None, prefix=""):
     return Handler
 
 
-def serve(host="127.0.0.1", port=8788, prefix="", targets=None):
+def serve(host="127.0.0.1", port=8788, prefix="", targets=None, ephemeral=False):
     """Start the HTTP server."""
     from http.server import ThreadingHTTPServer
     if targets is None:
         targets = load_config()  # returns (dirs, excludes, exclude_exts)
     prefix = prefix.rstrip("/")
 
-    Handler = create_app(targets, prefix)
+    Handler = create_app(targets, prefix, ephemeral=ephemeral)
     httpd = ThreadingHTTPServer((host, port), Handler)
     print(f"🦉 Owlia Nest → http://{host}:{port}{prefix}/")
     try:

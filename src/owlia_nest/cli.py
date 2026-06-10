@@ -87,9 +87,21 @@ def cmd_list(args):
 
 def cmd_serve(args):
     """Start the docs server."""
-    dirs, _, _ = load_config()
     prefix = args.prefix or ""
-    serve(host=args.host, port=args.port, prefix=prefix, targets=dirs)
+    if getattr(args, "dirs", None):
+        # Explicit dirs on the command line: serve exactly those, ignore config.
+        targets = []
+        for d in args.dirs:
+            p = Path(d).expanduser().resolve()
+            if not p.exists():
+                print(f"❌ Directory does not exist: {p}")
+                sys.exit(1)
+            targets.append(p)
+        serve(host=args.host, port=args.port, prefix=prefix, targets=targets,
+              ephemeral=True)
+    else:
+        targets = load_config()  # (dirs, exclude_dirs, exclude_exts)
+        serve(host=args.host, port=args.port, prefix=prefix, targets=targets)
 
 
 def cmd_setup(args):
@@ -221,6 +233,7 @@ def main():
     p_list.set_defaults(func=cmd_list)
 
     p_serve = sub.add_parser("serve", help="Start the docs server")
+    p_serve.add_argument("dirs", nargs="*", help="Directories to serve (overrides config)")
     p_serve.add_argument("--port", type=int, default=8788)
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--prefix", default="")
@@ -229,7 +242,13 @@ def main():
     p_setup = sub.add_parser("setup", help="Auto-configure everything")
     p_setup.set_defaults(func=cmd_setup)
 
-    args = parser.parse_args()
+    # Quick-start form: `owlia-nest ~/dir --port 8788` == `owlia-nest serve ~/dir ...`
+    argv = sys.argv[1:]
+    commands = {"init", "add", "list", "serve", "setup"}
+    if argv and argv[0] not in commands and argv[0] not in ("-h", "--help"):
+        argv = ["serve"] + argv
+
+    args = parser.parse_args(argv)
     if not args.command:
         parser.print_help()
         return
