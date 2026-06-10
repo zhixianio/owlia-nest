@@ -29,11 +29,22 @@ MAX_SCAN_DEPTH = 2
 FILE_CACHE = {}
 
 # ── Security ──────────────────────────────────────────────────────
-def _strip_html(raw: str) -> str:
-    # Remove script/style blocks to avoid executing arbitrary JS/CSS when rendering markdown.
-    raw = re.sub(r"(?is)<script[^>]*>.*?</script>", "", raw)
-    raw = re.sub(r"(?is)<style[^>]*>.*?</style>", "", raw)
-    return raw
+_DANGEROUS_TAGS = r"script|style|iframe|object|embed|form|base|meta|link"
+
+def _clean_tag(m):
+    tag = m.group(0)
+    tag = re.sub(r"(?i)\son\w+\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", "", tag)
+    tag = re.sub(r"(?i)(href|src)\s*=\s*(['\"]?)\s*javascript:[^'\">\s]*", r"\1=\2#", tag)
+    return tag
+
+def _sanitize_html(html: str) -> str:
+    """Sanitize rendered markdown HTML (post-render, so escaped code samples
+    in fences survive untouched): drop script/style with content, dangerous
+    tags, inline on* handlers and javascript: URLs."""
+    html = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", "", html)
+    html = re.sub(r"(?is)</?(%s)\b[^>]*>" % _DANGEROUS_TAGS, "", html)
+    html = re.sub(r"<[^>]+>", _clean_tag, html)
+    return html
 
 # ── I18n ──────────────────────────────────────────────────────────
 # Translation dictionary: Chinese key → {"zh": ..., "en": ...}
@@ -842,7 +853,7 @@ def render_doc(path, prefix="", lang="zh", f_rel=None, f_root=None, mode="txt"):
     """Render a text-like file view with editor. mode: md | txt | plain."""
     raw = path.read_text(encoding="utf-8", errors="replace")
     if mode == "md":
-        html = markdown.markdown(_strip_html(raw), extensions=MD_EXTENSIONS)
+        html = _sanitize_html(markdown.markdown(raw, extensions=MD_EXTENSIONS))
         view_html = f'<div id="mdView" class="markdown-body">{html}</div>'
     elif mode == "plain":
         try:
@@ -915,11 +926,13 @@ def render_media(path, prefix="", lang="zh"):
     return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 # ── WSGI/HTTP handler ────────────────────────────────────────────
-def create_app(targets=None, prefix="", ephemeral=False):
+def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
     """Build the request handler.
 
     ephemeral=True means targets were given explicitly (CLI args): never
     reload/overwrite them from the on-disk config.
+    auth_token, when set, requires every request to carry a matching
+    `owlia_auth` cookie or one-time `?token=` query (which sets the cookie).
     """
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -995,14 +1008,30 @@ def create_app(targets=None, prefix="", ephemeral=False):
                  "capacitor://localhost", "file://")
         if origin.startswith(allow):
             return True
-        # Also allow if Host header is localhost or known local hostname
+        # Also allow if Host header is a local address
         host = (headers.get("Host") or "").split(":")[0]
-        if host in ("localhost", "127.0.0.1", "0.0.0.0", "bunker", "bunker.local"):
+        if host in ("localhost", "127.0.0.1", "0.0.0.0"):
             return True
         return False
 
     class Handler(BaseHTTPRequestHandler):
+        def _authed(self):
+            if not auth_token:
+                return True
+            for part in (self.headers.get("Cookie") or "").split(";"):
+                part = part.strip()
+                if part.startswith("owlia_auth=") and part[len("owlia_auth="):] == auth_token:
+                    return True
+            q = parse_qs(urlparse(self.path).query)
+            if q.get("token", [None])[0] == auth_token:
+                self._set_auth_cookie = True  # picked up by _send
+                return True
+            return False
+
         def do_GET(self):
+            if not self._authed():
+                self.send_error(401, "Unauthorized (append ?token=<token> once to log in)")
+                return
             parsed = urlparse(self.path)
             raw_path = parsed.path
             path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
@@ -1184,6 +1213,9 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 self.send_error(404)
 
         def do_POST(self):
+            if not self._authed():
+                self.send_error(401, "Unauthorized")
+                return
             parsed = urlparse(self.path)
             raw_path = parsed.path
             path = raw_path[len(prefix):] if prefix and raw_path.startswith(prefix) else raw_path
@@ -1286,8 +1318,9 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 _state[2] = new_exclude_exts
                 self._send(json.dumps({"ok": True, "count": len(new_targets)}), "application/json")
             elif path == "/api/upgrade":
-                # No shared secret: only loopback clients may trigger an upgrade.
-                if self.client_address[0] not in ("127.0.0.1", "::1"):
+                # Loopback always allowed; remote clients only when token auth
+                # is enabled (and they already passed _authed above).
+                if self.client_address[0] not in ("127.0.0.1", "::1") and not auth_token:
                     self.send_error(403, "Forbidden"); return
                 try:
                     result = subprocess.run(
@@ -1356,6 +1389,10 @@ def create_app(targets=None, prefix="", ephemeral=False):
         def _send(self, content, ct):
             body = content.encode("utf-8") if isinstance(content, str) else content
             self.send_response(200)
+            if getattr(self, "_set_auth_cookie", False):
+                self.send_header(
+                    "Set-Cookie",
+                    f"owlia_auth={auth_token}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly")
             self.send_header("Content-Type", ct)
             self.send_header("Content-Length", len(body))
             self.end_headers()
@@ -1370,16 +1407,20 @@ def create_app(targets=None, prefix="", ephemeral=False):
     return Handler
 
 
-def serve(host="127.0.0.1", port=8788, prefix="", targets=None, ephemeral=False):
+def serve(host="127.0.0.1", port=8788, prefix="", targets=None, ephemeral=False,
+          auth_token=None):
     """Start the HTTP server."""
     from http.server import ThreadingHTTPServer
     if targets is None:
         targets = load_config()  # returns (dirs, excludes, exclude_exts)
     prefix = prefix.rstrip("/")
+    if auth_token is None:
+        auth_token = _read_config_raw().get("auth_token") or None
 
-    Handler = create_app(targets, prefix, ephemeral=ephemeral)
+    Handler = create_app(targets, prefix, ephemeral=ephemeral, auth_token=auth_token)
     httpd = ThreadingHTTPServer((host, port), Handler)
-    print(f"🦉 Owlia Nest → http://{host}:{port}{prefix}/")
+    lock = " 🔒" if auth_token else ""
+    print(f"🦉 Owlia Nest → http://{host}:{port}{prefix}/{lock}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

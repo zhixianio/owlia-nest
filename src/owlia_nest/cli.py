@@ -98,10 +98,11 @@ def cmd_serve(args):
                 sys.exit(1)
             targets.append(p)
         serve(host=args.host, port=args.port, prefix=prefix, targets=targets,
-              ephemeral=True)
+              ephemeral=True, auth_token=args.token)
     else:
         targets = load_config()  # (dirs, exclude_dirs, exclude_exts)
-        serve(host=args.host, port=args.port, prefix=prefix, targets=targets)
+        serve(host=args.host, port=args.port, prefix=prefix, targets=targets,
+              auth_token=args.token)
 
 
 def cmd_setup(args):
@@ -237,6 +238,9 @@ def main():
     p_serve.add_argument("--port", type=int, default=8788)
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--prefix", default="")
+    p_serve.add_argument("--token", default=None,
+                         help="Require this access token (or set auth_token in config). "
+                              "Open ?token=<token> once per device to log in.")
     p_serve.set_defaults(func=cmd_serve)
 
     p_setup = sub.add_parser("setup", help="Auto-configure everything")
