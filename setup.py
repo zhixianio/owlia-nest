@@ -14,7 +14,7 @@ setup(
     version=version,
     packages=find_packages(where="src"),
     package_dir={"": "src"},
-    package_data={"owlia_nest": ["icons/*"]},
+    package_data={"owlia_nest": ["icons/*", "static/*"]},
     include_package_data=True,
     install_requires=["markdown>=3.4", "pygments>=2.15"],
     entry_points={

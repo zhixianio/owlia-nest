@@ -140,12 +140,6 @@ def _lang_attr(lang):
     return "zh-Hans" if lang == "zh" else "en"
 
 
-def _js_i18n(lang="zh"):
-    """Generate a JS object literal with all translations for the given language."""
-    entries = {k: v.get(lang, k) for k, v in T.items()}
-    return json.dumps(entries, ensure_ascii=False)
-
-
 def get_lang(handler):
     """Detect language from request: ?lang= query → cookie → Accept-Language → default 'zh'."""
     parsed = urlparse(handler.path)
@@ -369,118 +363,7 @@ self.addEventListener('message', e => {{
 }});
 """
 
-BASE_CSS = """\
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.6; transition: background 0.3s, color 0.3s; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-.container { max-width: 960px; margin: 0 auto; padding: 1rem 1.25rem; }
-header { padding: 1.5rem 0; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
-header h1 { font-size: 1.5rem; color: var(--accent); }
-header p { color: var(--muted); font-size: 0.85rem; }
-.header-brand { display: flex; align-items: center; gap: 0.5rem; }
-.header-brand h1 { margin: 0; }
-.header-brand p { margin: 0; }
-.logo { border-radius: 6px; flex-shrink: 0; }
-.header-right { display: flex; gap: 0.5rem; align-items: center; }
-.theme-select { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; }
-.lang-toggle { font-size: 0.75rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; font-family: inherit; white-space: nowrap; }
-.lang-toggle:hover { border-color: var(--accent); }
-.breadcrumb { font-size: 0.875rem; color: var(--muted); margin-bottom: 1rem; }
-.breadcrumb a { color: var(--accent); text-decoration: none; }
-.breadcrumb a:hover { text-decoration: underline; }
-.browse-item { padding: 0.35rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; user-select: none; }
-.btn-dl { color: var(--muted); text-decoration: none; font-size: 0.85rem; padding: 0 0.2rem; flex-shrink: 0; }
-.btn-dl:hover { color: var(--accent); }
-.browse-item:hover { background: var(--card-bg); }
-.browse-item a { color: var(--fg); text-decoration: none; }
-.browse-item a:hover { color: var(--accent); }
-.file-card { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--border); border-radius: 6px; transition: background 0.15s; }
-.file-card:hover { background: var(--card-bg); }
-.btn-star { background: none; border: none; cursor: pointer; font-size: 1.15rem; padding: 0 0.25rem; flex-shrink: 0; opacity: 0.7; transition: opacity 0.15s; line-height: 1; color: #d4a017; }
-.btn-star:hover { opacity: 0.8; }
-.btn-star.faved { opacity: 1; }
-.file-card:hover .btn-star { opacity: 0.75; }
-.file-card:hover .btn-star:hover { opacity: 1; }
-.file-icon { font-size: 1.1rem; flex-shrink: 0; width: 1.5rem; text-align: center; }
-.file-name { flex: 1; min-width: 0; }
-.file-name a { color: var(--accent); text-decoration: none; font-weight: 500; word-break: break-all; }
-.file-name a:hover { text-decoration: underline; }
-.file-path { color: var(--muted); font-size: 0.78rem; word-break: break-all; }
-.file-date { color: var(--muted); font-size: 0.8rem; white-space: nowrap; min-width: 5rem; text-align: right; }
-.file-size { color: var(--muted); font-size: 0.75rem; min-width: 3.5rem; text-align: right; }
-.markdown-body { max-width: 100%; overflow-x: auto; word-wrap: break-word; }
-.markdown-body h1 { font-size: 1.75rem; margin: 1.5rem 0 0.5rem; color: var(--fg); }
-.markdown-body h2 { font-size: 1.35rem; margin: 1.25rem 0 0.4rem; padding-bottom: 0.3rem; border-bottom: 2px solid var(--border); color: var(--fg); }
-.markdown-body h3 { font-size: 1.15rem; margin: 1rem 0 0.3rem; color: var(--fg); }
-.markdown-body p, .markdown-body li { margin: 0.5rem 0; }
-.markdown-body ul, .markdown-body ol { padding-left: 1.5rem; }
-.markdown-body a { color: var(--accent); }
-.markdown-body code { background: var(--code-bg); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
-.markdown-body pre { background: var(--code-bg); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 0.75rem 0; border: 1px solid var(--border); }
-.markdown-body pre code { background: none; padding: 0; border: none; }
-.markdown-body table { border-collapse: collapse; width: 100%; margin: 0.75rem 0; display: block; overflow-x: auto; }
-.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
-.markdown-body th { background: var(--card-bg); font-weight: 600; }
-.markdown-body blockquote { border-left: 3px solid var(--accent); padding: 0.5rem 1rem; color: var(--muted); margin: 0.75rem 0; background: var(--tint, var(--card-bg)); border-radius: 0 6px 6px 0; }
-.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
-/* Pygments token colors (codehilite css_class="highlight") */
-.highlight .k, .highlight .kc, .highlight .kd, .highlight .kn, .highlight .kp, .highlight .kr, .highlight .kt, .highlight .ow { color: var(--syn-kw); }
-.highlight .s, .highlight .s1, .highlight .s2, .highlight .sa, .highlight .sb, .highlight .sc, .highlight .sd, .highlight .se, .highlight .sh, .highlight .si, .highlight .sx, .highlight .sr, .highlight .ss, .highlight .dl { color: var(--syn-str); }
-.highlight .c, .highlight .c1, .highlight .cm, .highlight .cp, .highlight .cpf, .highlight .cs, .highlight .ch { color: var(--syn-com); font-style: italic; }
-.highlight .m, .highlight .mb, .highlight .mf, .highlight .mh, .highlight .mi, .highlight .mo, .highlight .il { color: var(--syn-num); }
-.highlight .nf, .highlight .fm, .highlight .nd { color: var(--syn-fn); }
-.highlight .nc, .highlight .nn, .highlight .ne, .highlight .nb, .highlight .bp, .highlight .nt { color: var(--syn-cls); }
-.highlight .na, .highlight .nv, .highlight .vc, .highlight .vg, .highlight .vi, .highlight .vm { color: var(--syn-num); }
-.highlight .o { color: var(--syn-op); }
-.highlight .gh, .highlight .gu { color: var(--syn-kw); font-weight: 600; }
-.highlight .gd { color: var(--syn-kw); }
-.highlight .gi { color: var(--syn-str); }
-.markdown-body img { max-width: 100%; height: auto; border-radius: 6px; }
-.back-link { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
-.back-link a { color: var(--accent); text-decoration: none; }
-.status-bar { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 1rem 0; margin-top: 2rem; border-top: 1px solid var(--border); }
-.tabs-bar { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-bottom: 1.5rem; border-bottom: 2px solid var(--border); padding-bottom: 0; }
-.tabs-bar button { background: none; border: none; color: var(--muted); padding: 0.5rem 0.75rem; font-size: 0.875rem; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; font-family: inherit; }
-.tabs-bar button:hover { color: var(--fg); }
-.tabs-bar button.tab-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.tab-count { font-size: 0.75rem; opacity: 0.6; }
-.settings-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; transition: all 0.2s; }
-.settings-title { font-weight: 600; margin-bottom: 0.75rem; font-size: 0.95rem; }
-.dir-list { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.75rem; max-height: 200px; overflow-y: auto; }
-.dir-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.85rem; background: var(--bg); }
-.dir-path { flex: 1; word-break: break-all; font-family: monospace; font-size: 0.78rem; }
-.dir-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 0 0.25rem; line-height: 1; }
-.dir-remove:hover { color: #ef4444; }
-.add-dir-row { display: flex; gap: 0.5rem; }
-.version-tag { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: var(--code-bg); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; line-height: 1.4; }
-.version-upgrade { font-size: 0.75rem; color: var(--accent); text-decoration: none; font-weight: 600; cursor: pointer; }
-.version-upgrade:hover { text-decoration: underline; }
-.upgrade-banner { margin: 0 0 1rem 0; padding: 0.6rem 1rem; background: var(--tint); border: 1px solid var(--accent); border-radius: 8px; font-size: 0.85rem; text-align: center; }
-.upgrade-banner code { font-size: 0.78rem; background: var(--bg); padding: 0.15em 0.4em; border-radius: 4px; }
-.dir-input { flex: 1; padding: 0.35rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font-family: monospace; font-size: 0.8rem; }
-.dir-input:focus { outline: 2px solid var(--accent); }
-.btn-add { padding: 0.35rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
-.btn-add:hover { opacity: 0.85; }
-.file-actions { position: absolute; right: 0.5rem; bottom: 0.3rem; display: flex; gap: 0.2rem; align-items: center; z-index: 1; }
-.btn-tiny { font-size: 0.7rem; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 5px; background: var(--card-bg); color: var(--fg); cursor: pointer; touch-action: manipulation; }
-.btn-tiny:hover { border-color: var(--accent); }
-.file-card { position: relative; }
-.exclude-list { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.5rem; }
-.exclude-tag { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.78rem; background: var(--code-bg); border: 1px solid var(--border); }
-@media (max-width: 600px) {
-  .file-card { flex-wrap: wrap; gap: 0.3rem; }
-  .file-date, .file-size { min-width: auto; }
-  .container { padding: 0.5rem 0.75rem; }
-  header { flex-direction: column; }
-}
-"""
-
-# ── Page template ─────────────────────────────────────────────────
-# Placeholders used in .format():
-#   {lang_attr}    – HTML lang attribute ("zh-Hans" or "en")
-#   {lang}         – language code for JS ("zh" or "en")
-#   {__js_i18n__}  – JSON dict of all T entries in the current lang
-#   {title} {body} {head_extra} {__theme_css__} {__theme_js__}
-#   {BASE_CSS} {default_theme} {api_base}
+# CSS lives in static/app.css; page JS in static/app.js (config via window.OWLIA).
 PAGE_TPL = """\
 <!doctype html>
 <html lang="{lang_attr}">
@@ -495,438 +378,18 @@ PAGE_TPL = """\
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Owlia Nest">
 <meta name="theme-color" content="#0d1117">
-{head_extra}
+<link rel="stylesheet" href="{api_base}/static/app.css">
 <style>
 :root {{ {__theme_css__} }}
-{BASE_CSS}
 </style>
+<script>window.OWLIA = {__owlia_cfg__};</script>
+{head_extra}
 </head>
 <body>
 <div class="container">
 {body}
 </div>
-<script>
-var __LANG = '{lang}';
-var I18N = {__js_i18n__};
-function _(k){{ return I18N[k] || k; }}
-function toggleLang(){{
-  var n = __LANG === 'zh' ? 'en' : 'zh';
-  document.cookie = 'lang=' + n + ';path=/;max-age=31536000';
-  var u = new URL(location.href);
-  u.searchParams.set('lang', n);
-  location.href = u.toString();
-}}
-{__theme_js__}
-(function(){{
-  var sel=document.getElementById('themeSelect');
-  if(sel){{
-    var saved=localStorage.getItem('owlia-theme')||'{default_theme}';
-    sel.value=saved;
-    _apply(saved);
-    sel.onchange=function(){{ _apply(this.value); localStorage.setItem('owlia-theme',this.value); }};
-  }}
-  function _apply(k){{
-    var t=THEMES[k]; if(!t)return;
-    var r=document.documentElement;
-    Object.keys(t).forEach(function(v){{ r.style.setProperty('--'+v,t[v]); }});
-    if(sel)sel.value=k;
-  }}
-  var btns=document.querySelectorAll('.tabs-bar button');
-  btns.forEach(function(b){{
-    b.onclick=function(){{
-      btns.forEach(function(x){{x.classList.remove('tab-active')}});
-      b.classList.add('tab-active');
-      var key=b.dataset.tab;
-      document.querySelectorAll('.tab-panel').forEach(function(p){{p.style.display='none'}});
-      var el=document.querySelector('[data-panel="'+key+'"]');
-      if(el)el.style.display='';
-      if(key==='browse') initBrowse();
-      if(key==='fav') renderFavTab();
-      doSearch();
-    }}
-  }});
-  /* Settings */
-  /* loadDirs and loadFavorites moved to the init block below */
-}})();
-var _swReg = null;
-if ('serviceWorker' in navigator) {{
-  navigator.serviceWorker.register('{api_base}/sw.js').then(function(reg){{
-    _swReg = reg;
-    reg.onupdatefound = function(){{
-      var newWorker = reg.installing;
-      if (!newWorker) return;
-      newWorker.onstatechange = function(){{
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {{
-          showUpdateToast();
-        }}
-      }};
-    }};
-    // Check for updates periodically
-    setInterval(function(){{ reg.update(); }}, 60*1000);
-  }});
-  // Also detect update from controllerchange
-  var refreshing = false;
-  navigator.serviceWorker.oncontrollerchange = function(){{
-    if (!refreshing) {{ refreshing = true; location.reload(); }}
-  }};
-}}
-function showUpdateToast(){{
-  var t = document.createElement('div');
-  t.id = 'updateToast';
-  t.style.cssText = 'position:fixed;bottom:1rem;right:1rem;background:var(--accent);color:#fff;padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9999;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3);';
-  t.textContent = _('🔄 新版本可用，点击更新');
-  t.onclick = function(){{
-    if (_swReg && _swReg.waiting) {{ _swReg.waiting.postMessage('skip-waiting'); }}
-    t.textContent = _('更新中…');
-  }};
-  document.body.appendChild(t);
-}}
-function showUpgradeCmd(e){{
-  e.preventDefault();
-  var b = document.getElementById('upgradeBanner');
-  if(b) b.style.display = b.style.display === 'none' ? '' : 'none';
-}}
-function upgradeNow(){{
-  var btn = document.querySelector('#upgradeBanner .btn-add');
-  var status = document.getElementById('upgradeStatus');
-  var status2 = document.getElementById('upgradeStatus2');
-  if (btn) {{ btn.disabled = true; btn.textContent = _('⏳ 升级中…'); }}
-  api('POST','{api_base}/api/upgrade',{{token:'owlia-upgrade-2026'}}).then(function(r){{
-    if (r.ok) {{
-      if (status) {{ status.textContent = _('✅ 升级完成，等待服务重启…'); status.style.color = '#22c55e'; }}
-      if (status2) {{ status2.textContent = _('✅ 升级完成，等待服务重启…'); status2.style.color = '#22c55e'; }}
-      // Poll for server to come back
-      var attempts = 0;
-      function poll() {{
-        attempts++;
-        fetch('{api_base}/').then(function(res){{
-          if (res.ok) {{
-            var el = status || status2;
-            if (el) {{ el.innerHTML = _('✅ 服务已重启 ') + '<a href="#" onclick="location.reload()" style="color:var(--accent);text-decoration:underline">' + _('点击刷新') + '</a>'; }}
-          }} else if (attempts < 30) {{ setTimeout(poll, 2000); }}
-        }}).catch(function(){{
-          if (attempts < 30) setTimeout(poll, 2000);
-        }});
-      }}
-      setTimeout(poll, 3000);
-    }} else {{
-      if (status) {{ status.textContent = _('❌ 升级失败: ') + (r.error || r.output || _('未知错误')); status.style.color = '#ef4444'; }}
-      if (status2) {{ status2.textContent = _('❌ 升级失败: ') + (r.error || r.output || _('未知错误')); status2.style.color = '#ef4444'; }}
-      if (btn) {{ btn.disabled = false; btn.textContent = _('⚡ 一键升级'); }}
-    }}
-  }});
-}}
-// Legacy JS upgrade banner button
-// Version check (GitHub releases)
-setTimeout(checkVersion, 5000);
-setInterval(checkVersion, 30*60*1000);
-function checkVersion(){{
-  api('GET','{api_base}/api/version').then(function(info){{
-    if (info && info.has_update && info.latest) {{
-      var id = 'upgradeBanner';
-      if (document.getElementById(id)) return;
-      var b = document.createElement('div');
-      b.id = id;
-      b.style.cssText = 'position:fixed;bottom:1rem;left:1rem;right:1rem;background:var(--bg);border:2px solid var(--accent);color:var(--fg);padding:0.75rem 1rem;border-radius:8px;font-size:0.875rem;z-index:9998;text-align:center;box-shadow:0 2px 12px rgba(0,0,0,0.2);max-width:500px;margin:0 auto;';
-      b.innerHTML = '🆕 <strong>v'+info.latest+'</strong> ' + _('已发布（当前 v') + info.local + _('）') + '<br><button onclick="upgradeNow()" class="btn-add" style="margin:0.25rem 0">' + _('⚡ 一键升级') + '</button><br><small id="upgradeStatus2" style="color:var(--muted)"></small><br><button onclick="this.parentNode.remove()" style="margin-top:0.25rem;padding:0.15rem 0.5rem;border:1px solid var(--border);border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:0.75rem">' + _('忽略') + '</button>';
-      document.body.appendChild(b);
-    }}
-  }});
-}}
-</script>
-<script>
-function toggleSettings(){{
-  var p=document.getElementById('settingsPanel');
-  p.style.display=p.style.display==='none'?'block':'none';
-  if(p.style.display==='block')loadDirs();
-}}
-function api(method,url,body){{ return fetch(url,{{method:method,headers:{{'Content-Type':'application/json'}},body:body?JSON.stringify(body):null}}).then(function(r){{ if(!r.ok)throw new Error(r.status); return r.json(); }}); }}
-function loadDirs(){{
-  api('GET','{api_base}/api/dirs').then(function(data){{
-    var dirs = Array.isArray(data) ? data : data.dirs || [];
-    var excludeDirs = data.exclude_dirs || [];
-    var excludeExts = data.exclude_exts || [];
-    var el=document.getElementById('dirList');
-    if(el){{ el.innerHTML=dirs.map(function(d){{ return '<div class="dir-item"><span class="dir-path">'+d+'</span><button class="dir-remove" data-dir="'+encodeURIComponent(d)+'" title="'+_('移除')+'">×</button></div>'; }}).join('')||'<span style="color:var(--muted);font-size:0.8rem">'+_('暂无监控目录')+'</span>'; }}
-    var exEl=document.getElementById('excludeDirList');
-    if(exEl){{ exEl.innerHTML=excludeDirs.map(function(d){{ return '<span class="exclude-tag">📁 '+d+' <button class="dir-remove" data-exdir="'+encodeURIComponent(d)+'" title="'+_('移除排除')+'">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">'+_('无')+'</span>'; }}
-    var extEl=document.getElementById('excludeExtList');
-    if(extEl){{ extEl.innerHTML=excludeExts.map(function(e){{ return '<span class="exclude-tag">'+e+' <button class="dir-remove" data-exext="'+encodeURIComponent(e)+'" title="'+_('移除排除')+'">×</button></span>'; }}).join('')||'<span style="color:var(--muted);font-size:0.75rem">'+_('无')+'</span>'; }}
-    // Attach handlers
-    document.querySelectorAll('.dir-remove[data-dir]').forEach(function(btn){{ btn.onclick=function(){{ removeDir(decodeURIComponent(this.dataset.dir)); }}; }});
-    document.querySelectorAll('.dir-remove[data-exdir]').forEach(function(btn){{ btn.onclick=function(){{ removeExcludeDir(decodeURIComponent(this.dataset.exdir)); }}; }});
-    document.querySelectorAll('.dir-remove[data-exext]').forEach(function(btn){{ btn.onclick=function(){{ removeExcludeExt(decodeURIComponent(this.dataset.exext)); }}; }});
-  }});
-}}
-function addDir(){{
-  var inp=document.getElementById('dirInput');
-  if(!inp||!inp.value.trim())return;
-  api('POST','{api_base}/api/add-dir',{{dir:inp.value.trim()}}).then(function(r){{
-    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(r.error||'Failed');
-  }});
-}}
-function removeDir(d){{
-  d=decodeURIComponent(d);
-  if(!confirm(_('移除 ') + d + _(' ？')))return;
-  api('POST','{api_base}/api/remove-dir',{{dir:d}}).then(function(r){{
-    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(r.error||'Failed');
-  }});
-}}
-function addExcludeDir(){{
-  var inp=document.getElementById('excludeDirInput');
-  if(!inp||!inp.value.trim())return;
-  api('POST','{api_base}/api/exclude-dir',{{dir:inp.value.trim()}}).then(function(r){{
-    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(r.error||'Failed');
-  }});
-}}
-function removeExcludeDir(d){{
-  d=decodeURIComponent(d);
-  api('POST','{api_base}/api/remove-exclude-dir',{{dir:d}}).then(function(r){{
-    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(r.error||'Failed');
-  }});
-}}
-function addExcludeExt(){{
-  var inp=document.getElementById('excludeExtInput');
-  if(!inp||!inp.value.trim())return;
-  api('POST','{api_base}/api/exclude-ext',{{ext:inp.value.trim()}}).then(function(r){{
-    if(r.ok){{ inp.value=''; loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(_('添加失败: ') + (r.error || _('未知错误')));
-  }});
-}}
-function quickExcludeDir(name,btn){{
-  if (btn.textContent === _('↩ 撤销')) {{
-    api('POST','{api_base}/api/remove-exclude-dir',{{dir:name}}).then(function(r){{
-      if(r.ok){{ toast(_('已恢复目录: ')+name); setTimeout(function(){{location.reload()}},800); }}
-      else alert(r.error||_('操作失败'));
-    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
-  }} else {{
-    toast(_('将排除目录: ')+name+_('\\n（相同目录下的其他文件也会一并隐藏）'));
-    api('POST','{api_base}/api/exclude-dir',{{dir:name}}).then(function(r){{
-      if(r.ok){{ btn.textContent=_('↩ 撤销'); btn.title=_('↩ 撤销'); toast(_('✅ 已排除目录: ')+name); setTimeout(function(){{location.reload()}},1200); }}
-      else alert(r.error||_('操作失败'));
-    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
-  }}
-}}
-function quickExcludeExt(ext,btn){{
-  if (btn.textContent === _('↩ 撤销')) {{
-    api('POST','{api_base}/api/remove-exclude-ext',{{ext:ext}}).then(function(r){{
-      if(r.ok){{ toast(_('已恢复类型: ')+ext); setTimeout(function(){{location.reload()}},800); }}
-      else alert(r.error||_('操作失败'));
-    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
-  }} else {{
-    toast(_('将排除类型: ')+ext+_('\\n（所有同扩展名文件都会被隐藏）'));
-    api('POST','{api_base}/api/exclude-ext',{{ext:ext}}).then(function(r){{
-      if(r.ok){{ btn.textContent=_('↩ 撤销'); btn.title=_('↩ 撤销'); toast(_('✅ 已排除类型: ')+ext); setTimeout(function(){{location.reload()}},1200); }}
-      else alert(r.error||_('操作失败'));
-    }}).catch(function(e){{ alert(_('网络错误: ')+e); }});
-  }}
-}}
-function toast(msg){{
-  var id='_toast'; var e=document.getElementById(id); if(e)e.remove();
-  e=document.createElement('div'); e.id=id;
-  e.style.cssText='position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:0.6rem 1.2rem;border-radius:8px;font-size:0.85rem;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.3);transition:opacity 0.3s';
-  e.textContent=msg; document.body.appendChild(e);
-  setTimeout(function(){{ e.style.opacity='0'; setTimeout(function(){{if(e.parentNode)e.remove()}},300); }},2500);
-}}
-var _browseState = {{ path: null, inited: false, dirs: [] }};
-var _favorites = new Set();
-function loadFavorites(){{
-  // Load from localStorage first for instant UI
-  try{{
-    var local=localStorage.getItem('owlia-nest-favs');
-    if(local){{ _favorites=new Set(JSON.parse(local)); }}
-  }}catch(e){{}}
-  renderStars();
-  updateFavCount();
-  // Then sync from server
-  api('GET','{api_base}/api/favorites').then(function(data){{
-    if(data && data.favorites){{ _favorites=new Set(data.favorites); }}
-    renderStars();
-    updateFavCount();
-    try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
-  }}).catch(function(){{
-    setTimeout(function(){{
-      api('GET','{api_base}/api/favorites').then(function(data){{
-        if(data && data.favorites){{ _favorites=new Set(data.favorites); }}
-        renderStars();
-        updateFavCount();
-        try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
-      }});
-    }},500);
-  }});
-}}
-function toggleFav(fpath,starEl){{
-  // Optimistic UI update
-  var wasFaved = _favorites.has(fpath);
-  if(wasFaved){{
-    _favorites.delete(fpath); starEl.textContent='☆'; starEl.classList.remove('faved'); starEl.title=_('收藏');
-  }} else {{
-    _favorites.add(fpath); starEl.textContent='⏳'; starEl.classList.add('faved'); starEl.title=_('取消收藏');
-  }}
-  updateFavCount();
-  try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
-  api('POST','{api_base}/api/favorites/toggle',{{path:fpath}}).then(function(r){{
-    if(r && r.ok){{ starEl.textContent='⭐'; return; }}
-    throw new Error('api failed');
-  }}).catch(function(){{
-    if(wasFaved){{ _favorites.add(fpath); starEl.textContent='⭐'; starEl.classList.add('faved'); starEl.title=_('取消收藏'); }}
-    else{{ _favorites.delete(fpath); starEl.textContent='☆'; starEl.classList.remove('faved'); starEl.title=_('收藏'); }}
-    updateFavCount();
-    try{{ localStorage.setItem('owlia-nest-favs',JSON.stringify([..._favorites])); }}catch(e){{}}
-  }});
-}}
-function renderStars(){{
-  document.querySelectorAll('.btn-star').forEach(function(star){{
-    var fpath = star.dataset.filepath;
-    if(!fpath) return;
-    if(_favorites.has(fpath)){{
-      star.textContent='⭐'; star.classList.add('faved'); star.title=_('取消收藏');
-    }} else {{
-      star.textContent='☆'; star.classList.remove('faved'); star.title=_('收藏');
-    }}
-  }});
-}}
-function updateFavCount(){{
-  var btn=document.querySelector('.tabs-bar button[data-tab="fav"]');
-  if(btn){{ var cnt=btn.querySelector('.tab-count'); if(cnt) cnt.textContent=_favorites.size; }}
-}}
-function renderFavTab(){{
-  var panel=document.querySelector('[data-panel="fav"]');
-  if(!panel) return;
-  var seen=new Set();
-  var html='';
-  document.querySelectorAll('.file-card').forEach(function(card){{
-    var a=card.querySelector('.file-name a');
-    if(!a||!a.dataset.filepath) return;
-    if(!_favorites.has(a.dataset.filepath)) return;
-    if(seen.has(a.dataset.filepath)) return;
-    seen.add(a.dataset.filepath);
-    html+=card.outerHTML;
-  }});
-  panel.innerHTML=html||'<p style="color:var(--muted);padding:2rem;text-align:center">'+_('暂无内容')+'</p>';
-}}
-function initBrowse(){{
-  if(_browseState.inited) return;
-  _browseState.inited = true;
-  api('GET','{api_base}/api/dirs').then(function(info){{
-    var dirs = (info && info.dirs) ? info.dirs : [];
-    if(dirs.length===0) return;
-    _browseState.dirs = dirs;
-    renderBrowseRoot(dirs);
-  }}).catch(function(){{}});
-}}
-function renderBrowseRoot(dirs){{
-  var bcEl = document.getElementById('browseBreadcrumbs');
-  var listEl = document.getElementById('browseList');
-  if(!bcEl || !listEl) return;
-  bcEl.innerHTML = '<span style="color:var(--muted)">📂 '+_('监控目录')+'</span>';
-  var h = '';
-  for(var j=0;j<dirs.length;j++){{
-    var d=dirs[j];
-    h += '<div class="browse-item" data-browse-path="'+escapeHtml(d)+'">📁 '+escapeHtml(d)+'</div>';
-  }}
-  listEl.innerHTML = h;
-  doSearch();
-}}
-function loadBrowse(p){{
-  if(!p) return;
-  _browseState.path = p;
-  var url = '{api_base}/api/browse?path=' + encodeURIComponent(p);
-  fetch(url).then(function(r){{ return r.json(); }}).then(function(data){{
-    renderBrowse(data);
-  }}).catch(function(e){{
-    var el = document.getElementById('browseList');
-    if(el) el.innerHTML = '<p style="color:var(--muted)">'+escapeHtml(String(e))+'</p>';
-  }});
-}}
-function renderBrowse(data){{
-  var bcEl = document.getElementById('browseBreadcrumbs');
-  var listEl = document.getElementById('browseList');
-  if(!bcEl || !listEl) return;
-  if(!data || !data.ok){{
-    bcEl.innerHTML = '';
-    listEl.innerHTML = '<p style="color:var(--muted)">'+escapeHtml((data&&data.error)||'Failed')+'</p>';
-    return;
-  }}
-  var bcs = data.breadcrumbs || [];
-  var bcHtml = '<a href="#" class="browse-item" data-browse-root="1">📂 '+_('监控目录')+'</a>';
-  for(var i=0;i<bcs.length;i++){{ 
-    var c=bcs[i];
-    bcHtml += ' / <a href="#" class="browse-item" data-browse-path="'+escapeHtml(c.path)+'">'+escapeHtml(c.name)+'</a>';
-  }}
-  bcEl.innerHTML = bcHtml;
-  var ds = data.dirs || [];
-  var fs = data.files || [];
-  var h = '';
-  for(var j=0;j<ds.length;j++){{ 
-    var d=ds[j];
-    h += '<div class="browse-item" data-browse-path="'+escapeHtml(d.path)+'">📁 '+escapeHtml(d.name)+'</div>';
-  }}
-  for(var k=0;k<fs.length;k++){{ 
-    var f=fs[k];
-    var fRel = f.rel_path || f.name;
-    var fRoot = data.root || data.path;
-    var href = '{api_base}/view?f=' + encodeURIComponent(fRel) + '&r=' + encodeURIComponent(fRoot);
-    h += '<div class="browse-item">📄 <a href="'+href+'">'+escapeHtml(f.name)+'</a></div>';
-  }}
-  listEl.innerHTML = h || '<p style="color:var(--muted)">'+_('暂无内容')+'</p>';
-  doSearch();
-}}
-function doSearch(){{
-  var inp = document.getElementById('searchInput');
-  var q = (inp && inp.value) ? inp.value.trim().toLowerCase() : '';
-  var activeBtn = document.querySelector('.tabs-bar button.tab-active');
-  var key = activeBtn ? activeBtn.getAttribute('data-tab') : 'recent';
-  var panel = document.querySelector('[data-panel=\"'+key+'\"]');
-  if(!panel) return;
-  var items = panel.querySelectorAll('.file-card, .browse-item');
-  for(var i=0;i<items.length;i++){{ 
-    var it=items[i];
-    if(!q){{ it.style.display=''; continue; }}
-    var t = (it.textContent||'').toLowerCase();
-    it.style.display = (t.indexOf(q) >= 0) ? '' : 'none';
-  }}
-}}
-// Delegated click handler for exclude buttons
-document.addEventListener('click',function(e){{
-  // Browse root handler — go back to monitored dirs list
-  var r = e.target.closest('[data-browse-root]');
-  if(r){{ e.preventDefault(); renderBrowseRoot(_browseState.dirs); return; }}
-  // Browse path handler — check FIRST, before .btn-tiny
-  var b = e.target.closest('[data-browse-path]');
-  if(b){{ e.preventDefault(); loadBrowse(b.getAttribute('data-browse-path')); return; }}
-  var btn = e.target.closest('.btn-tiny');
-  if(!btn) return;
-  var d = btn.getAttribute('data-exclude-dir');
-  if(d){{ quickExcludeDir(d,btn); return; }}
-  var ext = btn.getAttribute('data-exclude-ext');
-  if(ext){{ quickExcludeExt(ext,btn); return; }}
-}});
-function removeExcludeExt(e){{
-  e=decodeURIComponent(e);
-  api('POST','{api_base}/api/remove-exclude-ext',{{ext:e}}).then(function(r){{
-    if(r.ok){{ loadDirs(); setTimeout(function(){{location.reload()}},500); }}
-    else alert(r.error||'Failed');
-  }});
-}}
-/* Init: call after all functions are defined */
-(function(){{
-  loadDirs();
-  loadFavorites();
-  // Auto-navigate browse tab if ?browse=<dirPath> is in URL
-  var qp = new URLSearchParams(location.search);
-  var browseTarget = qp.get('browse');
-  if (browseTarget) {{
-    var browseBtn = document.querySelector('.tabs-bar button[data-tab="browse"]');
-    if (browseBtn) browseBtn.click();
-    setTimeout(function(){{ loadBrowse(decodeURIComponent(browseTarget)); }}, 100);
-  }}
-}})();
-</script>
+<script src="{api_base}/static/app.js"></script>
 </body>
 </html>
 """
@@ -1175,27 +638,18 @@ def fr_query(f_rel, root):
 
 # ── HTML builders ─────────────────────────────────────────────────
 def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", lang="zh"):
-    theme_css = THEMES[default_theme]["css"].strip()
-    theme_json = json.dumps({k: theme_dict(k) for k in THEMES})
-    theme_js = f"var THEMES = {theme_json};"
-    # Inject helpers via head_extra (do NOT put these inside PAGE_TPL).
-    head_extra = (
-        "<script>"
-        "function escapeHtml(s){"
-        "s=(s===null||s===undefined)?'':String(s);"
-        "return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
-        ".replace(/\\\"/g,'&quot;').replace(/'/g,'&#39;');"
-        "}"
-        "</script>"
-        + (head_extra or "")
-    )
+    cfg = json.dumps({
+        "prefix": prefix,
+        "lang": lang,
+        "i18n": {k: v.get(lang, k) for k, v in T.items()},
+        "themes": {k: theme_dict(k) for k in THEMES},
+        "defaultTheme": default_theme,
+    }, ensure_ascii=False).replace("</", "<\\/")
     return PAGE_TPL.format(
-        title=title, body=body, head_extra=head_extra,
-        __theme_css__=theme_css, __theme_js__=theme_js,
-        BASE_CSS=BASE_CSS, default_theme=default_theme,
-        api_base=prefix,
-        lang_attr=_lang_attr(lang), lang=lang,
-        __js_i18n__=_js_i18n(lang),
+        title=title, body=body, head_extra=head_extra or "",
+        __theme_css__=THEMES[default_theme]["css"].strip(),
+        __owlia_cfg__=cfg,
+        api_base=prefix, lang_attr=_lang_attr(lang),
     )
 
 def file_card(f, href, lang="zh"):
@@ -1308,12 +762,12 @@ def render_home(files, prefix="", lang="zh"):
 </div>"""
 
     head_extra = f'<link rel="manifest" href="{prefix}/manifest.json">'
-    body = header + tabs + "\n".join(secs)
+    search_panel = '<section id="searchResults" class="tab-panel" style="display:none"></section>'
+    body = header + tabs + search_panel + "\n".join(secs)
     return mk_page("Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
 def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):
     """Build breadcrumb HTML for file view pages with clickable directory path."""
-    from urllib.parse import quote as _quote
     rel = f_rel or path.name
     parts = Path(rel).parts
     f_root_str = str(f_root) if f_root else str(path.parent)
@@ -1328,7 +782,7 @@ def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):
             # Directory — link to home page with ?browse=<dirPath> to auto-navigate
             dir_rel = "/".join(cur_parts)
             dir_abs = str(Path(f_root_str) / dir_rel)
-            safe_dir = _quote(dir_abs, safe='')
+            safe_dir = quote(dir_abs, safe='')
             crumbs.append(
                 '<a href="' + prefix + '/?browse=' + safe_dir + '">' +
                 escape(part) + '</a>'
@@ -1336,309 +790,60 @@ def _file_breadcrumb(path, prefix, f_rel, f_root, lang="zh"):
     return " / ".join(crumbs)
 
 
-def render_md(path, prefix="", lang="zh", f_rel=None, f_root=None):
-    raw = path.read_text(encoding="utf-8", errors="replace")
-    raw = _strip_html(raw)
-    html = markdown.markdown(raw, extensions=MD_EXTENSIONS)
-    dl_url = f"{prefix}/download?{fr_query(f_rel or path.name, f_root or path.parent)}"
-    theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
-    safe_name = escape(path.name)
-    # Embed raw md as JSON (handles all Unicode safely)
-    raw_json = json.dumps(raw)
-    f_rel_s = escape(f_rel or path.name)
-    f_root_s = escape(str(f_root or path.parent))
-    save_text = _("保存", lang)
-    editor_js = """<link rel="stylesheet" href="%s/icons/easymde.css">
-<script src="%s/icons/easymde.js"></script>
-<style>
-#mdEditor { margin: 1rem 0; }
-.btn-edit { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; color: var(--fg); margin-left: 4px; }
-.btn-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-/* EasyMDE Owlia Nest theme */
-.EasyMDEContainer .CodeMirror { background: var(--card-bg); color: var(--fg); border-color: var(--border); }
-.EasyMDEContainer .editor-toolbar { background: var(--card-bg); border-color: var(--border); }
-.EasyMDEContainer .editor-toolbar button { color: var(--fg); }
-.EasyMDEContainer .editor-toolbar button:hover,
-.EasyMDEContainer .editor-toolbar button.active { background: var(--tint); border-color: var(--accent); }
-.EasyMDEContainer .editor-toolbar i.separator { border-left-color: var(--border); border-right-color: transparent; }
-.EasyMDEContainer .editor-preview { background: var(--bg); color: var(--fg); }
-.EasyMDEContainer .editor-preview pre { background: var(--code-bg); }
-.EasyMDEContainer .editor-statusbar { color: var(--muted); }
-.EasyMDEContainer .CodeMirror-gutters { background: var(--code-bg); border-right-color: var(--border); color: var(--muted); }
-.EasyMDEContainer .CodeMirror-linenumber { color: var(--muted); }
-.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--accent); }
-.EasyMDEContainer .CodeMirror-selected { background: var(--tint) !important; }
-.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: var(--tint) !important; }
-.EasyMDEContainer .CodeMirror-fullscreen { background: var(--bg); }
-.EasyMDEContainer .editor-toolbar.fullscreen { background: var(--bg); }
-.EasyMDEContainer .editor-toolbar.fullscreen::before,
-.EasyMDEContainer .editor-toolbar.fullscreen::after { background: none; }
-.EasyMDEContainer .CodeMirror-placeholder { color: var(--muted); }
-.cm-s-easymde .cm-header { color: var(--accent); }
-.cm-s-easymde .cm-link { color: var(--accent); }
-.cm-s-easymde .cm-url { color: var(--muted); }
-.cm-s-easymde .cm-quote { color: var(--muted); }
-.cm-s-easymde .cm-comment { background: var(--code-bg); color: var(--muted); }
-.cm-s-easymde .cm-string { color: #a5d6ff; }
-.cm-s-easymde .cm-tag { color: #7ee787; }
-.cm-s-easymde .cm-attribute { color: #d2a8ff; }
-.easymde-dropdown-content { background: var(--card-bg); border: 1px solid var(--border); }
-.easymde-dropdown-content button { color: var(--fg); }
-.easymde-dropdown-content button:hover { background: var(--tint); }
-.editor-toolbar .easymde-dropdown { border-color: var(--fg); }
-.CodeMirror div.CodeMirror-cursors { visibility: visible; }
-</style>
-<script>
-var _easyMDE = null;
-var _mdRaw = null;
-var _mdFile = { f: '%s', r: '%s' };
-var _mdPrefix = '%s';
-var _saveLabel = '%s';
-function toggleEdit() {
-  if (!_mdRaw) {
-    try { _mdRaw = JSON.parse(document.getElementById('mdRawData').textContent); } catch(e) {}
-    if (!_mdRaw) _mdRaw = '';
-  }
-  document.getElementById('mdView').style.display = 'none';
-  document.getElementById('mdEditor').style.display = '';
-  document.getElementById('btnEdit').style.display = 'none';
-  document.getElementById('btnSave').style.display = '';
-  document.getElementById('btnCancel').style.display = '';
-  if (!_easyMDE) {
-    _easyMDE = new EasyMDE({
-      element: document.getElementById('mdTextarea'),
-      initialValue: _mdRaw,
-      spellChecker: false,
-      status: false,
-      autosave: { enabled: false },
-      renderingConfig: { codeSyntaxHighlighting: true }
-    });
-  } else {
-    _easyMDE.value(_mdRaw);
-  }
-}
-function cancelEdit() {
-  document.getElementById('mdView').style.display = '';
-  document.getElementById('mdEditor').style.display = 'none';
-  document.getElementById('btnEdit').style.display = '';
-  document.getElementById('btnSave').style.display = 'none';
-  document.getElementById('btnCancel').style.display = 'none';
-}
-function saveEdit() {
-  var content = _easyMDE ? _easyMDE.value() : '';
-  var btn = document.getElementById('btnSave');
-  btn.disabled = true;
-  btn.textContent = '⏳';
-  fetch(_mdPrefix + '/api/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ f: _mdFile.f, r: _mdFile.r, content: content })
-  }).then(function(r){ return r.json(); }).then(function(r) {
-    if (r.ok) {
-      _mdRaw = content;
-      // Update rendered view in-place by re-fetching the view page
-      var viewUrl = _mdPrefix + '/view?f=' + encodeURIComponent(_mdFile.f) + '&r=' + encodeURIComponent(_mdFile.r);
-      fetch(viewUrl).then(function(resp){ return resp.text(); }).then(function(html) {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = html;
-        var newView = tmp.querySelector('#mdView');
-        if (newView) {
-          document.getElementById('mdView').innerHTML = newView.innerHTML;
-        }
-        // Stay in edit mode — just update the button to show success
-        btn.textContent = '✅ ' + _saveLabel;
-        setTimeout(function() { btn.textContent = '💾 ' + _saveLabel; }, 1200);
-        btn.disabled = false;
-      }).catch(function() {
-        btn.textContent = _saveLabel;
-        btn.disabled = false;
-      });
-    } else {
-      alert(r.error || 'Save failed');
-      btn.textContent = _saveLabel;
-      btn.disabled = false;
-    }
-  }).catch(function(e) {
-    alert('Network error: ' + e);
-    btn.textContent = _saveLabel;
-    btn.disabled = false;
-  });
-}
-/* Keyboard shortcut: Ctrl+S / Cmd+S → save (stay in editor) */
-document.addEventListener('keydown', function(e) {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    var saveBtn = document.getElementById('btnSave');
-    if (saveBtn && saveBtn.style.display !== 'none') {
-      saveEdit();
-    }
-  }
-});
-</script>
-<script type="application/json" id="mdRawData">%s</script>
-""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, raw_json)
-    breadcrumb = _file_breadcrumb(path, prefix, f_rel_s, f_root, lang)
-    body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
-  <div class="header-right">
-    <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
-    <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
-<div class="breadcrumb">{breadcrumb} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
-<div id="mdView" class="markdown-body">{html}</div>
-<div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
-<div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{safe_name} — Owlia Nest", body, editor_js, prefix=prefix, lang=lang)
+def _json_for_script(obj):
+    """JSON safe to embed inside a <script> block (escapes </script>)."""
+    return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
-def render_txt(path, prefix="", lang="zh", f_rel=None, f_root=None):
+
+def render_doc(path, prefix="", lang="zh", f_rel=None, f_root=None, mode="txt"):
+    """Render a text-like file view with editor. mode: md | txt | plain."""
     raw = path.read_text(encoding="utf-8", errors="replace")
-    dl_url = f"{prefix}/download?{fr_query(f_rel or path.name, f_root or path.parent)}"
+    if mode == "md":
+        html = markdown.markdown(_strip_html(raw), extensions=MD_EXTENSIONS)
+        view_html = f'<div id="mdView" class="markdown-body">{html}</div>'
+    elif mode == "plain":
+        try:
+            from pygments import highlight as _pyg_highlight
+            from pygments.lexers import get_lexer_for_filename
+            from pygments.formatters import HtmlFormatter
+            lexer = get_lexer_for_filename(path.name, raw)
+            code_html = _pyg_highlight(raw, lexer, HtmlFormatter(cssclass="highlight"))
+        except Exception:
+            code_html = f'<pre>{escape(raw)}</pre>'
+        view_html = (f'<div id="mdView" class="markdown-body" '
+                     f'style="font-size:0.875rem">{code_html}</div>')
+    else:
+        view_html = (f'<div id="mdView"><pre style="background:var(--code-bg);padding:1rem;'
+                     f'border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;'
+                     f'border:1px solid var(--border)">{escape(raw)}</pre></div>')
+
+    f_rel = str(f_rel or path.name)
+    f_root = str(f_root or path.parent)
+    dl_url = f"{prefix}/download?{fr_query(f_rel, f_root)}"
     theme_opts = "".join(f'<option value="{k}">{v["name"]}</option>' for k, v in THEMES.items())
     safe_name = escape(path.name)
-    f_rel_s = escape(f_rel or path.name)
-    f_root_s = escape(str(f_root or path.parent))
-    save_text = _("保存", lang)
-    # Reuse the same editor_js template from render_md
-    editor_js = """<link rel="stylesheet" href="%s/icons/easymde.css">
-<script src="%s/icons/easymde.js"></script>
-<style>
-#mdEditor { margin: 1rem 0; }
-.btn-edit { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; color: var(--fg); margin-left: 4px; }
-.btn-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-/* EasyMDE Owlia Nest theme */
-.EasyMDEContainer .CodeMirror { background: var(--card-bg); color: var(--fg); border-color: var(--border); }
-.EasyMDEContainer .editor-toolbar { background: var(--card-bg); border-color: var(--border); }
-.EasyMDEContainer .editor-toolbar button { color: var(--fg); }
-.EasyMDEContainer .editor-toolbar button:hover,
-.EasyMDEContainer .editor-toolbar button.active { background: var(--tint); border-color: var(--accent); }
-.EasyMDEContainer .editor-toolbar i.separator { border-left-color: var(--border); border-right-color: transparent; }
-.EasyMDEContainer .editor-preview { background: var(--bg); color: var(--fg); }
-.EasyMDEContainer .editor-preview pre { background: var(--code-bg); }
-.EasyMDEContainer .editor-statusbar { color: var(--muted); }
-.EasyMDEContainer .CodeMirror-gutters { background: var(--code-bg); border-right-color: var(--border); color: var(--muted); }
-.EasyMDEContainer .CodeMirror-linenumber { color: var(--muted); }
-.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--accent); }
-.EasyMDEContainer .CodeMirror-selected { background: var(--tint) !important; }
-.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: var(--tint) !important; }
-.EasyMDEContainer .CodeMirror-fullscreen { background: var(--bg); }
-.EasyMDEContainer .editor-toolbar.fullscreen { background: var(--bg); }
-.EasyMDEContainer .editor-toolbar.fullscreen::before,
-.EasyMDEContainer .editor-toolbar.fullscreen::after { background: none; }
-.EasyMDEContainer .CodeMirror-placeholder { color: var(--muted); }
-.cm-s-easymde .cm-header { color: var(--accent); }
-.cm-s-easymde .cm-link { color: var(--accent); }
-.cm-s-easymde .cm-url { color: var(--muted); }
-.cm-s-easymde .cm-quote { color: var(--muted); }
-.cm-s-easymde .cm-comment { background: var(--code-bg); color: var(--muted); }
-.cm-s-easymde .cm-string { color: #a5d6ff; }
-.cm-s-easymde .cm-tag { color: #7ee787; }
-.cm-s-easymde .cm-attribute { color: #d2a8ff; }
-.easymde-dropdown-content { background: var(--card-bg); border: 1px solid var(--border); }
-.easymde-dropdown-content button { color: var(--fg); }
-.easymde-dropdown-content button:hover { background: var(--tint); }
-.editor-toolbar .easymde-dropdown { border-color: var(--fg); }
-.CodeMirror div.CodeMirror-cursors { visibility: visible; }
-</style>
-<script>
-var _easyMDE = null;
-var _mdRaw = null;
-var _mdFile = { f: '%s', r: '%s' };
-var _mdPrefix = '%s';
-var _saveLabel = '%s';
-function toggleEdit() {
-  if (!_mdRaw) {
-    try { _mdRaw = document.getElementById('mdRawData').textContent; } catch(e) {}
-    if (!_mdRaw) _mdRaw = '';
-  }
-  document.getElementById('mdView').style.display = 'none';
-  document.getElementById('mdEditor').style.display = '';
-  document.getElementById('btnEdit').style.display = 'none';
-  document.getElementById('btnSave').style.display = '';
-  document.getElementById('btnCancel').style.display = '';
-  if (!_easyMDE) {
-    _easyMDE = new EasyMDE({
-      element: document.getElementById('mdTextarea'),
-      initialValue: _mdRaw,
-      spellChecker: false,
-      status: false,
-      autosave: { enabled: false },
-      renderingConfig: { codeSyntaxHighlighting: true },
-      toolbar: ["bold", "italic", "|", "unordered-list", "ordered-list", "|", "quote", "code", "|", "preview", "fullscreen", "|", "guide"]
-    });
-  } else {
-    _easyMDE.value(_mdRaw);
-  }
-}
-function cancelEdit() {
-  document.getElementById('mdView').style.display = '';
-  document.getElementById('mdEditor').style.display = 'none';
-  document.getElementById('btnEdit').style.display = '';
-  document.getElementById('btnSave').style.display = 'none';
-  document.getElementById('btnCancel').style.display = 'none';
-}
-function saveEdit() {
-  var content = _easyMDE ? _easyMDE.value() : '';
-  var btn = document.getElementById('btnSave');
-  btn.disabled = true;
-  btn.textContent = '⏳';
-  fetch(_mdPrefix + '/api/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ f: _mdFile.f, r: _mdFile.r, content: content })
-  }).then(function(r){ return r.json(); }).then(function(r) {
-    if (r.ok) {
-      _mdRaw = content;
-      // Update rendered view in-place by re-fetching the view page
-      var viewUrl = _mdPrefix + '/view?f=' + encodeURIComponent(_mdFile.f) + '&r=' + encodeURIComponent(_mdFile.r);
-      fetch(viewUrl).then(function(resp){ return resp.text(); }).then(function(html) {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = html;
-        var newView = tmp.querySelector('#mdView');
-        if (newView) {
-          document.getElementById('mdView').innerHTML = newView.innerHTML;
-        }
-        // Stay in edit mode — just update the button to show success
-        btn.textContent = '✅ ' + _saveLabel;
-        setTimeout(function() { btn.textContent = '💾 ' + _saveLabel; }, 1200);
-        btn.disabled = false;
-      }).catch(function() {
-        btn.textContent = _saveLabel;
-        btn.disabled = false;
-      });
-    } else {
-      alert(r.error || 'Save failed');
-      btn.textContent = _saveLabel;
-      btn.disabled = false;
-    }
-  }).catch(function(e) {
-    alert('Network error: ' + e);
-    btn.textContent = _saveLabel;
-    btn.disabled = false;
-  });
-}
-/* Keyboard shortcut: Ctrl+S / Cmd+S → save (stay in editor) */
-document.addEventListener('keydown', function(e) {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault();
-    var saveBtn = document.getElementById('btnSave');
-    if (saveBtn && saveBtn.style.display !== 'none') {
-      saveEdit();
-    }
-  }
-});
-</script>
-<script type="text/plain" id="mdRawData">%s</script>
-""" % (prefix, prefix, f_rel_s, f_root_s, prefix, save_text, escape(raw))
-    # For txt files, show plain text view (pre-formatted) instead of markdown rendered
-    raw_escaped = escape(raw)
-    breadcrumb = _file_breadcrumb(path, prefix, f_rel_s, f_root, lang)
+    editor_cfg = _json_for_script({
+        "f": f_rel, "r": f_root, "prefix": prefix, "mode": mode,
+        "saveLabel": _("保存", lang),
+    })
+    easymde_tag = "" if mode == "plain" else f'<script src="{prefix}/static/easymde.js"></script>'
+    head_extra = (
+        f'<link rel="stylesheet" href="{prefix}/static/editor.css">'
+        f'{easymde_tag}'
+        f'<script type="application/json" id="owliaEditorCfg">{editor_cfg}</script>'
+        f'<script type="application/json" id="mdRawData">{_json_for_script(raw)}</script>'
+        f'<script defer src="{prefix}/static/editor.js"></script>'
+    )
+    breadcrumb = _file_breadcrumb(path, prefix, f_rel, f_root, lang)
     body = f"""<header><div class="header-brand"><img src="{prefix}/icons/logo.png" alt="Owlia Nest" class="logo" width="32" height="32"><h1>Owlia Nest</h1></div>
   <div class="header-right">
     <button class="lang-toggle" onclick="toggleLang()" title="中 | EN">{_("中 | EN", lang)}</button>
     <select class="theme-select" id="themeSelect">{theme_opts}</select></div></header>
 <div class="breadcrumb">{breadcrumb} <a href="{dl_url}" class="btn-dl" title="{_('下载', lang)}">⬇</a> <button id="btnEdit" class="btn-edit" title="{_('编辑', lang)}" onclick="toggleEdit()">✏️ {_('编辑', lang)}</button><button id="btnSave" class="btn-edit" title="{_('保存', lang)}" onclick="saveEdit()" style="display:none">💾 {_('保存', lang)}</button><button id="btnCancel" class="btn-edit" title="{_('取消', lang)}" onclick="cancelEdit()" style="display:none">❌ {_('取消', lang)}</button></div>
-<div id="mdView"><pre style="background:var(--code-bg);padding:1rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;font-size:0.875rem;border:1px solid var(--border)">{raw_escaped}</pre></div>
+{view_html}
 <div id="mdEditor" style="display:none"><textarea id="mdTextarea"></textarea></div>
 <div class="back-link"><a href="{prefix}/">{_("← 返回首页", lang)}</a></div>"""
-    return mk_page(f"{safe_name} — Owlia Nest", body, editor_js, prefix=prefix, lang=lang)
+    return mk_page(f"{safe_name} — Owlia Nest", body, head_extra, prefix=prefix, lang=lang)
 
 def render_media(path, prefix="", lang="zh"):
     """Render image/audio files with inline embed."""
@@ -1767,20 +972,13 @@ def create_app(targets=None, prefix="", ephemeral=False):
 
             if path == "/sw.js":
                 self._send(_sw_js(prefix), "application/javascript; charset=utf-8")
+            elif path.startswith("/static/"):
+                self._static(Path(__file__).resolve().parent / "static", path[len("/static/"):])
             elif path.startswith("/icons/") and path[7:] in ICONS:
                 mime, data = ICONS[path[7:]]
                 self._send(data, mime)
             elif path.startswith("/icons/"):
-                # Serve static files from icons dir (easymde, bytemd, etc.)
-                fs_path = os.path.join(os.path.dirname(__file__), "icons", path[len("/icons/"):])
-                if os.path.isfile(fs_path):
-                    ext = os.path.splitext(fs_path)[1].lower()
-                    mime_map = {".css": "text/css", ".js": "application/javascript", ".mjs": "application/javascript",
-                                ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2"}
-                    with open(fs_path, "rb") as f:
-                        self._send(f.read(), mime_map.get(ext, "application/octet-stream"))
-                else:
-                    self.send_error(404)
+                self._static(Path(__file__).resolve().parent / "icons", path[len("/icons/"):])
             elif path == "/favicon.ico":
                 if "favicon-32.png" in ICONS:
                     mime, data = ICONS["favicon-32.png"]
@@ -1879,14 +1077,14 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 if fpath.exists() and fpath.is_file():
                     ext = fpath.suffix.lower()
                     if ext == ".md":
-                        self._html(render_md(fpath, prefix, lang, f_rel, f_root_p))
+                        self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="md"))
                     elif ext == ".txt":
-                        self._html(render_txt(fpath, prefix, lang, f_rel, f_root_p))
+                        self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="txt"))
                     elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
                                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
                         self._html(render_media(fpath, prefix, lang))
                     else:
-                        self._html(render_txt(fpath, prefix, lang))
+                        self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="plain"))
                 else:
                     self.send_error(404, "File not found")
             elif path == "/media":
@@ -2068,7 +1266,8 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 _state[2] = new_exclude_exts
                 self._send(json.dumps({"ok": True, "count": len(new_targets)}), "application/json")
             elif path == "/api/upgrade":
-                if data.get("token") != "owlia-upgrade-2026":
+                # No shared secret: only loopback clients may trigger an upgrade.
+                if self.client_address[0] not in ("127.0.0.1", "::1"):
                     self.send_error(403, "Forbidden"); return
                 try:
                     result = subprocess.run(
@@ -2121,6 +1320,18 @@ def create_app(targets=None, prefix="", ephemeral=False):
                     self._send(json.dumps({"ok": False, "error": str(e)}), "application/json")
             else:
                 self.send_error(404)
+
+        def _static(self, base, rel):
+            try:
+                fp = (base / rel).resolve()
+                fp.relative_to(base.resolve())
+            except Exception:
+                self.send_error(404); return
+            if not fp.is_file():
+                self.send_error(404); return
+            mime_map = {".css": "text/css", ".js": "application/javascript", ".mjs": "application/javascript",
+                        ".png": "image/png", ".svg": "image/svg+xml", ".woff2": "font/woff2"}
+            self._send(fp.read_bytes(), mime_map.get(fp.suffix.lower(), "application/octet-stream"))
 
         def _send(self, content, ct):
             body = content.encode("utf-8") if isinstance(content, str) else content

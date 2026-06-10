@@ -7,4 +7,4 @@ from owlia_nest.server import serve
 raw = sys.argv[1:] or [str(Path(__file__).resolve().parent.parent / ".devdocs")]
 targets = [Path(p).expanduser().resolve() for p in raw]
 print("DEV_SERVE targets:", targets, flush=True)
-serve(host="127.0.0.1", port=8788, prefix="/docs", targets=targets)
+serve(host="127.0.0.1", port=8788, prefix="/docs", targets=targets, ephemeral=True)

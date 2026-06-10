@@ -1,0 +1,39 @@
+#mdEditor { margin: 1rem 0; }
+.btn-edit { background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; color: var(--fg); margin-left: 4px; }
+.btn-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+/* Plain editor (code/config files) */
+.plain-editor { width: 100%; min-height: 60vh; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; line-height: 1.5; background: var(--code-bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; resize: vertical; }
+.plain-editor:focus { outline: 2px solid var(--accent); }
+/* EasyMDE Owlia Nest theme */
+.EasyMDEContainer .CodeMirror { background: var(--card-bg); color: var(--fg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar { background: var(--card-bg); border-color: var(--border); }
+.EasyMDEContainer .editor-toolbar button { color: var(--fg); }
+.EasyMDEContainer .editor-toolbar button:hover,
+.EasyMDEContainer .editor-toolbar button.active { background: var(--tint); border-color: var(--accent); }
+.EasyMDEContainer .editor-toolbar i.separator { border-left-color: var(--border); border-right-color: transparent; }
+.EasyMDEContainer .editor-preview { background: var(--bg); color: var(--fg); }
+.EasyMDEContainer .editor-preview pre { background: var(--code-bg); }
+.EasyMDEContainer .editor-statusbar { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-gutters { background: var(--code-bg); border-right-color: var(--border); color: var(--muted); }
+.EasyMDEContainer .CodeMirror-linenumber { color: var(--muted); }
+.EasyMDEContainer .CodeMirror-cursor { border-left-color: var(--accent); }
+.EasyMDEContainer .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-focused .CodeMirror-selected { background: var(--tint) !important; }
+.EasyMDEContainer .CodeMirror-fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen { background: var(--bg); }
+.EasyMDEContainer .editor-toolbar.fullscreen::before,
+.EasyMDEContainer .editor-toolbar.fullscreen::after { background: none; }
+.EasyMDEContainer .CodeMirror-placeholder { color: var(--muted); }
+.cm-s-easymde .cm-header { color: var(--accent); }
+.cm-s-easymde .cm-link { color: var(--accent); }
+.cm-s-easymde .cm-url { color: var(--muted); }
+.cm-s-easymde .cm-quote { color: var(--muted); }
+.cm-s-easymde .cm-comment { background: var(--code-bg); color: var(--muted); }
+.cm-s-easymde .cm-string { color: #a5d6ff; }
+.cm-s-easymde .cm-tag { color: #7ee787; }
+.cm-s-easymde .cm-attribute { color: #d2a8ff; }
+.easymde-dropdown-content { background: var(--card-bg); border: 1px solid var(--border); }
+.easymde-dropdown-content button { color: var(--fg); }
+.easymde-dropdown-content button:hover { background: var(--tint); }
+.editor-toolbar .easymde-dropdown { border-color: var(--fg); }
+.CodeMirror div.CodeMirror-cursors { visibility: visible; }
