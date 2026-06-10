@@ -24,7 +24,9 @@ MD_EXTENSIONS = [
 ]
 
 # ── Performance / caching ─────────────────────────────────────────
-MAX_SCAN_DEPTH = 2
+# Default directory depth for the home-page scan; override with the
+# "scan_depth" key in the config file.
+DEFAULT_SCAN_DEPTH = 4
 # Shared cache for scanned files (populated by background scanner).
 FILE_CACHE = {}
 
@@ -587,7 +589,9 @@ def _iter_files_scandir(root: Path, max_depth: int, skip_parts, skip_paths, excl
         except OSError:
             continue
 
-def scan_files(targets, exclude_dirs=None, exclude_exts=None):
+def scan_files(targets, exclude_dirs=None, exclude_exts=None, max_depth=None):
+    if max_depth is None:
+        max_depth = DEFAULT_SCAN_DEPTH
     files = []
     skip_parts = {"__pycache__", "node_modules", ".git"}
     skip_paths = []  # full paths to exclude
@@ -610,7 +614,7 @@ def scan_files(targets, exclude_dirs=None, exclude_exts=None):
         elif target.is_dir():
             for fpath in _iter_files_scandir(
                 target,
-                MAX_SCAN_DEPTH,
+                max_depth,
                 skip_parts,
                 skip_paths,
                 exclude_ext_set,
@@ -983,7 +987,11 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
                     _t = list(_t)
                     _e = list(_e)
                     _x = list(_x)
-                files = scan_files(_t, _e, _x)
+                try:
+                    depth = int(_read_config_raw().get("scan_depth", DEFAULT_SCAN_DEPTH))
+                except (TypeError, ValueError):
+                    depth = DEFAULT_SCAN_DEPTH
+                files = scan_files(_t, _e, _x, max_depth=depth)
                 with _cache_lock:
                     _cache["files"] = files
                     _cache["last_scan"] = time.time()
@@ -1073,8 +1081,30 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
                 info = _check_remote_version()
                 self._send(json.dumps(info), "application/json; charset=utf-8")
             elif path == "/api/favorites":
+                # Rich entries: favorites can be files OR directories.
                 favs = load_favorites(config_path)
-                self._send(json.dumps({"favorites": sorted(favs)}), "application/json; charset=utf-8")
+                entries = []
+                for fp in sorted(favs):
+                    p = Path(fp)
+                    exists = p.exists()
+                    is_dir = exists and p.is_dir()
+                    entry = {"path": fp, "name": p.name or fp,
+                             "exists": exists, "is_dir": is_dir}
+                    if exists:
+                        try:
+                            entry["mtime_ago"] = time_ago(p.stat().st_mtime, lang)
+                        except OSError:
+                            pass
+                        if not is_dir:
+                            entry["icon"] = icon_for({"name": p.name})
+                            for t in targets:
+                                if _path_is_within(p, t):
+                                    rel = p.resolve().relative_to(t.resolve())
+                                    entry["view_url"] = f"{prefix}/view?{fr_query(rel, t)}"
+                                    break
+                    entries.append(entry)
+                self._send(json.dumps({"favorites": entries}, ensure_ascii=False),
+                           "application/json; charset=utf-8")
             elif path == "/api/cache-status":
                 with _cache_lock:
                     payload = {
@@ -1084,6 +1114,26 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
                         "error": _cache.get("error"),
                     }
                 self._send(json.dumps(payload), "application/json; charset=utf-8")
+            elif path == "/api/search":
+                qstr = (q.get("q", [""])[0] or "").strip().lower()
+                terms = qstr.split()
+                if not terms:
+                    self._send(json.dumps({"ok": True, "results": []}), "application/json; charset=utf-8"); return
+                with _cache_lock:
+                    files = list(_cache.get("files") or [])
+                results = []
+                for f in files:  # cache is already sorted by mtime desc
+                    hay = (f["name"] + " " + f.get("rel_path", "")).lower()
+                    if all(t in hay for t in terms):
+                        results.append({
+                            "name": f["name"], "path": f["path"],
+                            "rel_path": f["rel_path"], "root": f["root"],
+                            "icon": icon_for(f), "mtime_ago": time_ago(f["mtime"], lang),
+                        })
+                        if len(results) >= 100:
+                            break
+                self._send(json.dumps({"ok": True, "results": results, "total_scanned": len(files)}),
+                           "application/json; charset=utf-8")
             elif path == "/api/browse":
                 p = q.get("path", [None])[0]
                 if not p:
@@ -1248,6 +1298,12 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
                 fpath = data.get("path", "").strip()
                 if not fpath:
                     self._send(json.dumps({"ok": False, "error": "missing path"}), "application/json"); return
+                # Adding a new favorite must stay within monitored dirs
+                # (removal is always allowed so stale entries can be cleaned).
+                if fpath not in load_favorites(config_path):
+                    fp_res = Path(fpath).expanduser()
+                    if not any(_path_is_within(fp_res, t) for t in targets):
+                        self._send(json.dumps({"ok": False, "error": "path not in monitored dirs"}), "application/json"); return
                 action, favs = toggle_favorite(fpath, config_path)
                 self._send(json.dumps({"ok": True, "action": action, "favorites": sorted(favs)}), "application/json")
             elif path == "/api/add-dir":
