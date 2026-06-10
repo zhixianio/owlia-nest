@@ -400,13 +400,48 @@ CATEGORIES = {
     "fav": ("⭐", "收藏"),
     "browse": ("📁", "浏览"),
 }
-_FILE_ICON = {
-    "md": "📄", "txt": "📝",
-    "py": "🐍", "ts": "🔷", "js": "📜", "html": "🌐", "css": "🎨",
-    "json": "⚙️", "yaml": "⚙️", "yml": "⚙️", "toml": "⚙️",
-    "png": "🖼️", "jpg": "🖼️", "jpeg": "🖼️", "gif": "🖼️", "webp": "🖼️", "svg": "🖼️",
-    "mp3": "🎵", "wav": "🎵", "ogg": "🎵", "m4a": "🎵", "opus": "🎵",
+# ── Extension registry: ext → (category, icon, mime) ─────────────
+# Single source of truth for what we scan, how we classify/iconify it,
+# and what MIME we serve it with.
+EXTENSIONS = {
+    "md":   ("doc", "📄", "text/markdown"),
+    "txt":  ("doc", "📝", "text/plain"),
+    "py":   ("code", "🐍", "text/x-python"),
+    "ts":   ("code", "🔷", "text/plain"),
+    "tsx":  ("code", "🔷", "text/plain"),
+    "js":   ("code", "📜", "application/javascript"),
+    "jsx":  ("code", "📜", "text/plain"),
+    "html": ("code", "🌐", "text/html"),
+    "css":  ("code", "🎨", "text/css"),
+    "scss": ("code", "🎨", "text/plain"),
+    "sh":   ("code", "📜", "text/x-shellscript"),
+    "json": ("config", "⚙️", "application/json"),
+    "yaml": ("config", "⚙️", "text/plain"),
+    "yml":  ("config", "⚙️", "text/plain"),
+    "toml": ("config", "⚙️", "text/plain"),
+    "cfg":  ("config", "⚙️", "text/plain"),
+    "ini":  ("config", "⚙️", "text/plain"),
+    "png":  ("media", "🖼️", "image/png"),
+    "jpg":  ("media", "🖼️", "image/jpeg"),
+    "jpeg": ("media", "🖼️", "image/jpeg"),
+    "gif":  ("media", "🖼️", "image/gif"),
+    "webp": ("media", "🖼️", "image/webp"),
+    "svg":  ("media", "🖼️", "image/svg+xml"),
+    "mp3":  ("media", "🎵", "audio/mpeg"),
+    "wav":  ("media", "🎵", "audio/wav"),
+    "ogg":  ("media", "🎵", "audio/ogg"),
+    "m4a":  ("media", "🎵", "audio/mp4"),
+    "opus": ("media", "🎵", "audio/opus"),
 }
+VALID_EXTS = {"." + e for e in EXTENSIONS}
+MEDIA_EXTS = {"." + e for e, v in EXTENSIONS.items() if v[0] == "media"}
+
+def _ext_of(name):
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+def mime_for(name, default="application/octet-stream"):
+    entry = EXTENSIONS.get(_ext_of(name))
+    return entry[2] if entry else default
 
 # ── File scanning ─────────────────────────────────────────────────
 # Default dirs are relative to workspace, detected at init time.
@@ -423,66 +458,80 @@ DEFAULT_DIRS = [
 def _expand(p):
     return Path(p).expanduser().resolve()
 
-def load_config(config_path=None):
+# Serializes all read-modify-write cycles on the config file. RLock so
+# helpers can nest (e.g. a handler holding the lock calls load+save).
+_CONFIG_LOCK = threading.RLock()
+
+def _config_file(config_path=None):
     if config_path is None:
         config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
-    path = _expand(config_path)
+    return _expand(config_path)
+
+def _read_config_raw(config_path=None):
+    path = _config_file(config_path)
     if path.exists():
-        data = json.loads(path.read_text())
-        dirs = [_expand(p) for p in data.get("dirs", [])]
-        excludes = data.get("exclude_dirs", [])
-        exclude_exts = data.get("exclude_exts", [])
-        return dirs, excludes, exclude_exts
+        try:
+            return json.loads(path.read_text())
+        except Exception:
+            pass
+    return {}
+
+def _write_config_raw(data, config_path=None):
+    path = _config_file(config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+    return path
+
+def load_config(config_path=None):
+    with _CONFIG_LOCK:
+        path = _config_file(config_path)
+        if path.exists():
+            data = _read_config_raw(config_path)
+            dirs = [_expand(p) for p in data.get("dirs", [])]
+            return dirs, data.get("exclude_dirs", []), data.get("exclude_exts", [])
     # fallback: scan default dirs if they exist
     dirs = [_expand(d) for d in DEFAULT_DIRS if _expand(d).exists()]
     return dirs, [], []
 
 def save_config(dirs, config_path=None, exclude_dirs=None, exclude_exts=None):
-    if config_path is None:
-        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
-    path = _expand(config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text())
-        except Exception:
-            pass
-    # Build new data preserving any keys from existing that aren't being overridden
-    data = {"dirs": [str(d) for d in dirs]}
-    data["exclude_dirs"] = exclude_dirs if exclude_dirs is not None else existing.get("exclude_dirs", [])
-    data["exclude_exts"] = exclude_exts if exclude_exts is not None else existing.get("exclude_exts", [])
-    path.write_text(json.dumps(data, indent=2))
-    return path
+    with _CONFIG_LOCK:
+        # Start from existing data so unrelated keys (favorites, …) survive.
+        data = _read_config_raw(config_path)
+        data["dirs"] = [str(d) for d in dirs]
+        if exclude_dirs is not None:
+            data["exclude_dirs"] = exclude_dirs
+        else:
+            data.setdefault("exclude_dirs", [])
+        if exclude_exts is not None:
+            data["exclude_exts"] = exclude_exts
+        else:
+            data.setdefault("exclude_exts", [])
+        return _write_config_raw(data, config_path)
 
 def load_favorites(config_path=None):
-    """Load favorited file paths from config."""
-    if config_path is None:
-        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
-    path = _expand(config_path)
-    if path.exists():
-        try:
-            data = json.loads(path.read_text())
-            return set(data.get("favorites", []))
-        except Exception:
-            pass
-    return set()
+    """Load favorited paths (files or dirs) from config."""
+    with _CONFIG_LOCK:
+        return set(_read_config_raw(config_path).get("favorites", []))
 
 def save_favorites(favorites, config_path=None):
-    """Save favorited file paths to config."""
-    if config_path is None:
-        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
-    path = _expand(config_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existing = {}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text())
-        except Exception:
-            pass
-    existing["favorites"] = sorted(favorites)
-    path.write_text(json.dumps(existing, indent=2))
-    return path
+    """Save favorited paths to config."""
+    with _CONFIG_LOCK:
+        data = _read_config_raw(config_path)
+        data["favorites"] = sorted(favorites)
+        return _write_config_raw(data, config_path)
+
+def toggle_favorite(fpath, config_path=None):
+    """Atomically toggle a favorite. Returns (action, favorites)."""
+    with _CONFIG_LOCK:
+        favs = load_favorites(config_path)
+        if fpath in favs:
+            favs.discard(fpath)
+            action = "removed"
+        else:
+            favs.add(fpath)
+            action = "added"
+        save_favorites(favs, config_path)
+        return action, favs
 
 def scan_file(path, root):
     stat = path.stat()
@@ -539,9 +588,7 @@ def scan_files(targets, exclude_dirs=None, exclude_exts=None):
             else:
                 skip_parts.add(d)
     exclude_ext_set = set(exclude_exts) if exclude_exts else set()
-    valid_ext = {".md", ".txt", ".py", ".ts", ".js", ".html", ".css", ".json", ".yaml", ".yml", ".toml",
-                 ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
-                 ".mp3", ".wav", ".ogg", ".m4a", ".opus"}
+    valid_ext = VALID_EXTS
     for target in targets:
         if not target.exists():
             continue
@@ -619,18 +666,14 @@ def time_ago(mtime, lang="zh"):
     return time.strftime("%m-%d %H:%M", time.localtime(mtime))
 
 def classify(f):
-    name = f["name"]
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    if ext in ("md", "txt"): return "doc"
-    if ext in ("py", "ts", "js", "tsx", "jsx", "html", "css", "scss"): return "code"
-    if ext in ("json", "yaml", "yml", "toml", "cfg", "ini", "env", "lock"): return "config"
-    if ext in ("png", "jpg", "jpeg", "gif", "webp", "svg", "mp3", "wav", "ogg", "m4a", "opus"): return "media"
-    return "other"
+    entry = EXTENSIONS.get(_ext_of(f["name"]))
+    return entry[0] if entry else "other"
 
 def icon_for(f):
-    name = f["name"]
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    return _FILE_ICON.get(ext, "📁" if f["is_dir"] else "📎")
+    entry = EXTENSIONS.get(_ext_of(f["name"]))
+    if entry:
+        return entry[1]
+    return "📁" if f.get("is_dir") else "📎"
 
 def fr_query(f_rel, root):
     """URL-encoded `f=<rel>&r=<root>` query string for view/media/download links."""
@@ -655,7 +698,7 @@ def mk_page(title, body, head_extra="", default_theme="github-dark", prefix="", 
 def file_card(f, href, lang="zh"):
     dname = os.path.dirname(f["path"])
     fpath = f["path"]
-    ext = f["name"].rsplit(".", 1)[-1].lower() if "." in f["name"] else ""
+    ext = _ext_of(f["name"])
     safe_name = escape(f["name"])
     safe_fpath = escape(fpath)
     return (
@@ -853,12 +896,11 @@ def render_media(path, prefix="", lang="zh"):
     media_url = f"{prefix}/media?{fr_query(path.name, path.parent)}"
     safe_name = escape(path.name)
 
-    _audio_mime = {".mp3": "mpeg", ".wav": "wav", ".ogg": "ogg", ".m4a": "mp4", ".opus": "opus"}
-
-    if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+    mime = mime_for(path.name)
+    if mime.startswith("image/"):
         elem = f'<img src="{media_url}" alt="{safe_name}" style="max-width:100%;height:auto;border-radius:6px;display:block">'
-    elif ext in _audio_mime:
-        elem = f'<audio controls preload="auto" style="width:100%;max-width:480px"><source src="{media_url}" type="audio/{_audio_mime[ext]}"></audio>'
+    elif mime.startswith("audio/"):
+        elem = f'<audio controls preload="auto" style="width:100%;max-width:480px"><source src="{media_url}" type="{mime}"></audio>'
     else:
         elem = f'<p style="color:var(--muted)">{_("暂不支持预览此文件类型", lang)}</p>'
 
@@ -1080,8 +1122,7 @@ def create_app(targets=None, prefix="", ephemeral=False):
                         self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="md"))
                     elif ext == ".txt":
                         self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="txt"))
-                    elif ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
-                                ".mp3", ".wav", ".ogg", ".m4a", ".opus"):
+                    elif ext in MEDIA_EXTS:
                         self._html(render_media(fpath, prefix, lang))
                     else:
                         self._html(render_doc(fpath, prefix, lang, f_rel, f_root_p, mode="plain"))
@@ -1101,15 +1142,7 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 except Exception:
                     self.send_error(403, "Forbidden"); return
                 if fpath.exists() and fpath.is_file():
-                    ext = fpath.suffix.lower()
-                    mime_map = {
-                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-                        ".mp3": "audio/mpeg", ".wav": "audio/wav",
-                        ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".opus": "audio/opus",
-                    }
-                    mime = mime_map.get(ext, "application/octet-stream")
-                    self._send(fpath.read_bytes(), mime)
+                    self._send(fpath.read_bytes(), mime_for(fpath.name))
                 else:
                     self.send_error(404, "File not found")
             elif path == "/download":
@@ -1135,15 +1168,9 @@ def create_app(targets=None, prefix="", ephemeral=False):
                     except UnicodeEncodeError:
                         fn_enc = quote(fpath.name, safe='')
                         cd_fn = f'filename*=UTF-8\'\'{fn_enc}'
-                    # Use specific MIME for binary files; text files use octet-stream
-                    # to avoid Caddy/proxy interfering with text/* responses
-                    mime_map = {
-                        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-                        ".mp3": "audio/mpeg", ".wav": "audio/wav",
-                        ".ogg": "audio/ogg", ".m4a": "audio/mp4", ".opus": "audio/opus",
-                    }
-                    mime = mime_map.get(ext, "application/octet-stream")
+                    # Media gets its real MIME; text stays octet-stream so
+                    # proxies (Caddy) don't rewrite the response
+                    mime = mime_for(fpath.name) if ext in MEDIA_EXTS else "application/octet-stream"
                     body = fpath.read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", mime)
@@ -1189,14 +1216,7 @@ def create_app(targets=None, prefix="", ephemeral=False):
                 fpath = data.get("path", "").strip()
                 if not fpath:
                     self._send(json.dumps({"ok": False, "error": "missing path"}), "application/json"); return
-                favs = load_favorites(config_path)
-                if fpath in favs:
-                    favs.discard(fpath)
-                    action = "removed"
-                else:
-                    favs.add(fpath)
-                    action = "added"
-                save_favorites(favs, config_path)
+                action, favs = toggle_favorite(fpath, config_path)
                 self._send(json.dumps({"ok": True, "action": action, "favorites": sorted(favs)}), "application/json")
             elif path == "/api/add-dir":
                 d = data.get("dir", "").strip()
