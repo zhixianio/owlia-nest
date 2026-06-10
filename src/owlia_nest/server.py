@@ -57,6 +57,7 @@ T = {
 
     # Categories
     "最近更新": {"zh": "最近更新", "en": "Recent"},
+    "浏览":     {"zh": "浏览",     "en": "Browse"},
     "文档":     {"zh": "文档",     "en": "Docs"},
     "代码":     {"zh": "代码",     "en": "Code"},
     "配置":     {"zh": "配置",     "en": "Config"},
@@ -247,6 +248,14 @@ def theme_dict(name):
     return out
 
 
+def _ver_tuple(v):
+    """Parse '1.2.3' → (1, 2, 3) for comparison; unparseable parts become 0."""
+    parts = []
+    for chunk in str(v).lstrip("v").split(".")[:4]:
+        m = re.match(r"\d+", chunk)
+        parts.append(int(m.group(0)) if m else 0)
+    return tuple(parts + [0] * (4 - len(parts)))
+
 LOCAL_VERSION = None
 _VERSION_CHECKED_AT = 0
 _VERSION_CACHE = None
@@ -294,7 +303,7 @@ def _check_remote_version():
     _VERSION_CACHE = {
         "local": local,
         "latest": latest or local,
-        "has_update": latest is not None and latest != local,
+        "has_update": latest is not None and _ver_tuple(latest) > _ver_tuple(local),
     }
     _VERSION_CHECKED_AT = now
     return _VERSION_CACHE
@@ -326,7 +335,7 @@ for name in ICON_NAMES:
         ICONS[name] = ("image/png", data)
 
 def _sw_js(prefix=""):
-    return f"""const CACHE = 'owlia-nest-v4-{prefix}';
+    return f"""const CACHE = 'owlia-nest-v5-{prefix}';
 const ICON_RE = /\\/(icons|favicon)\\.(png|ico)/;
 
 self.addEventListener('install', e => {{
@@ -360,6 +369,10 @@ self.addEventListener('fetch', e => {{
         return resp;
       }}))
     );
+    return;
+  }}
+  // Never cache API or non-GET requests
+  if (url.pathname.includes('/api/') || e.request.method !== 'GET') {{
     return;
   }}
   // Network-first for content
@@ -930,7 +943,7 @@ def render_media(path, prefix="", lang="zh"):
     return mk_page(f"{safe_name} — Owlia Nest", body, prefix=prefix, lang=lang)
 
 # ── WSGI/HTTP handler ────────────────────────────────────────────
-def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
+def create_app(targets=None, prefix="", ephemeral=False, auth_token=None, config_path=None):
     """Build the request handler.
 
     ephemeral=True means targets were given explicitly (CLI args): never
@@ -957,7 +970,8 @@ def create_app(targets=None, prefix="", ephemeral=False, auth_token=None):
             exclude_dirs, exclude_exts = [], []
     # Wrap in list to allow mutation from nested Handler
     _state = [targets, exclude_dirs, exclude_exts]
-    config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
+    if config_path is None:
+        config_path = Path.home() / ".config" / "owlia-nest" / "dirs.json"
     prefix = prefix.rstrip("/")
 
     _cache = FILE_CACHE

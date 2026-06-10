@@ -19,9 +19,10 @@ Read the JSON it returns: `verdict.editorRendered` must be `true`, and
 if `backgroundColor` is white the theme didn't apply; a `pageError` from `easymde.js`
 means the `new EasyMDE()` call threw.
 
-## Known fragility
-`render_md()` builds the editor HTML/JS/CSS via Python `%`-formatting (note the
-`%%` escapes). Adding any `%` or changing the arg count breaks page rendering with
-`TypeError: not all arguments converted during string formatting`. Prefer moving
-editor front-end into static files under `src/owlia_nest/icons/` over growing the
-`%`-template.
+## Architecture (since 0.3.0)
+Front-end lives in static files under `src/owlia_nest/static/` (`app.css`,
+`app.js`, `editor.js`, `editor.css`), served via the `/static/` route. Pages get
+config through a single `window.OWLIA` JSON blob; the editor reads
+`#owliaEditorCfg` + `#mdRawData` JSON blocks. Do NOT inline new JS/CSS into
+Python templates — add to the static files instead. Run tests with
+`.venv/bin/python -m unittest discover tests`.
